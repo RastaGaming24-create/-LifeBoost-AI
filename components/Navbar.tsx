@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Logo from "./Logo";
 
 export default function Navbar() {
@@ -8,25 +9,40 @@ export default function Navbar() {
 
       <Logo />
 
-      <div className="flex gap-8 text-white">
+      <div className="flex gap-8">
 
-        <Link href="/">
+        <Link
+          href="/"
+          className="text-white hover:text-blue-400 transition-colors"
+        >
           Inicio
         </Link>
 
-        <Link href="/dashboard">
+        <Link
+          href="/dashboard"
+          className="text-white hover:text-blue-400 transition-colors"
+        >
           Dashboard
         </Link>
 
-        <Link href="/finances">
+        <Link
+          href="/finances"
+          className="text-white hover:text-blue-400 transition-colors"
+        >
           Finanzas
         </Link>
 
-        <Link href="/goals">
+        <Link
+          href="/goals"
+          className="text-white hover:text-blue-400 transition-colors"
+        >
           Metas
         </Link>
 
-        <Link href="/ai">
+        <Link
+          href="/ai"
+          className="text-white hover:text-blue-400 transition-colors"
+        >
           IA
         </Link>
 
