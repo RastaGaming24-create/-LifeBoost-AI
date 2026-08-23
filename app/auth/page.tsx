@@ -2,54 +2,16 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "../../lib/firebase";
 import { useAuth } from "../../components/AuthProvider";
 
 export default function AuthPage() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const { user } = useAuth();
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
+  const router = useRouter(); const params = useSearchParams(); const { user } = useAuth();
+  const [mode, setMode] = useState<"login" | "signup">("login"); const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [name, setName] = useState(""); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   useEffect(() => { if (user?.emailVerified) router.replace(params.get("next") || "/dashboard"); }, [user, router, params]);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault(); setBusy(true); setError(""); setMessage("");
-    try {
-      if (!firebaseConfigured) throw new Error("Firebase todavía no está configurado en Vercel.");
-      if (mode === "signup") {
-        if (password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres.");
-        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
-        await setDoc(doc(db, "users", credential.user.uid), { email: credential.user.email, name: name.trim() || null, role: "user", createdAt: serverTimestamp(), emailVerified: false });
-        await sendEmailVerification(credential.user);
-        setMessage("Cuenta creada. Revisa tu correo y confirma tu dirección antes de entrar.");
-        await signOut(auth);
-      } else {
-        const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-        if (!credential.user.emailVerified) { await sendEmailVerification(credential.user); await signOut(auth); throw new Error("Tu correo aún no está verificado. Te enviamos un nuevo enlace de verificación."); }
-        router.replace(params.get("next") || "/dashboard");
-      }
-    } catch (err) { setError(err instanceof Error ? err.message : "No se pudo completar la operación."); }
-    finally { setBusy(false); }
-  }
-
-  return <main className="min-h-screen bg-slate-950 px-6 py-16 text-white"><div className="mx-auto max-w-md"><a href="/" className="text-sm text-blue-400">← LifeBoost AI</a><div className="mt-8 rounded-3xl border border-slate-800 bg-slate-900/80 p-7"><h1 className="text-3xl font-bold">{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h1><p className="mt-2 text-slate-400">Tus datos financieros quedan asociados a tu cuenta.</p>
-    <form onSubmit={submit} className="mt-7 space-y-4">
-      {mode === "signup" && <label className="block text-sm text-slate-400">Nombre<input value={name} onChange={e => setName(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white" autoComplete="name" /></label>}
-      <label className="block text-sm text-slate-400">Correo electrónico<input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white" autoComplete="email" /></label>
-      <label className="block text-sm text-slate-400">Contraseña<input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white" autoComplete={mode === "signup" ? "new-password" : "current-password"} /></label>
-      <button disabled={busy} className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold disabled:opacity-50">{busy ? "Procesando…" : mode === "login" ? "Entrar" : "Crear cuenta"}</button>
-    </form>
-    {message && <p className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">{message}</p>}
-    {error && <p className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">{error}</p>}
-    <button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setMessage(""); }} className="mt-6 text-sm text-slate-400 hover:text-white">{mode === "login" ? "¿No tienes cuenta? Crear una" : "¿Ya tienes cuenta? Iniciar sesión"}</button>
-  </div></div></main>;
+  async function submit(e: FormEvent) { e.preventDefault(); setBusy(true); setError(""); setMessage(""); try { if (!firebaseConfigured) throw new Error("Firebase todavía no está configurado en Vercel."); if (mode === "signup") { if (password.length < 8) throw new Error("La contraseña debe tener al menos 8 caracteres."); const credential = await createUserWithEmailAndPassword(auth, email.trim(), password); await setDoc(doc(db, "users", credential.user.uid), { email: credential.user.email, name: name.trim() || null, role: "user", createdAt: serverTimestamp(), emailVerified: false }); await sendEmailVerification(credential.user); setMessage("Cuenta creada. Revisa tu correo y confirma tu dirección antes de entrar."); await signOut(auth); } else { const credential = await signInWithEmailAndPassword(auth, email.trim(), password); if (!credential.user.emailVerified) { await sendEmailVerification(credential.user); await signOut(auth); throw new Error("Tu correo aún no está verificado. Te enviamos un nuevo enlace de verificación."); } router.replace(params.get("next") || "/dashboard"); } } catch (err) { setError(err instanceof Error ? err.message : "No se pudo completar la operación."); } finally { setBusy(false); } }
+  async function resetPassword() { if (!email.trim()) { setError("Escribe tu correo primero."); return; } setBusy(true); setError(""); setMessage(""); try { await sendPasswordResetEmail(auth, email.trim()); setMessage("Si la cuenta existe, recibirás instrucciones para restablecer tu contraseña."); } catch (err) { setError(err instanceof Error ? err.message : "No se pudo enviar el correo."); } finally { setBusy(false); } }
+  return <main className="min-h-screen bg-slate-950 px-6 py-16 text-white"><div className="mx-auto max-w-md"><a href="/" className="text-sm text-blue-400">← LifeBoost AI</a><div className="mt-8 rounded-3xl border border-slate-800 bg-slate-900/80 p-7"><h1 className="text-3xl font-bold">{mode === "login" ? "Iniciar sesión" : "Crear cuenta"}</h1><p className="mt-2 text-slate-400">Tu cuenta sincroniza tus datos de forma privada.</p><form onSubmit={submit} className="mt-7 space-y-4">{mode === "signup" && <label className="block text-sm text-slate-400">Nombre<input value={name} onChange={e => setName(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white" autoComplete="name" /></label>}<label className="block text-sm text-slate-400">Correo electrónico<input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white" autoComplete="email" /></label><label className="block text-sm text-slate-400">Contraseña<input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white" autoComplete={mode === "signup" ? "new-password" : "current-password"} /></label><button disabled={busy} className="w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold disabled:opacity-50">{busy ? "Procesando…" : mode === "login" ? "Entrar" : "Crear cuenta"}</button></form>{mode === "login" && <button onClick={resetPassword} disabled={busy} className="mt-4 text-sm text-blue-400">¿Olvidaste tu contraseña?</button>}{message && <p className="mt-5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-300">{message}</p>}{error && <p className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">{error}</p>}<button onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(""); setMessage(""); }} className="mt-6 text-sm text-slate-400">{mode === "login" ? "¿No tienes cuenta? Crear una" : "¿Ya tienes cuenta? Iniciar sesión"}</button></div></div></main>;
 }
