@@ -2,14 +2,16 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, waitForPendingWrites } from "firebase/firestore";
+import { collection, deleteDoc, doc, onSnapshot } from "firebase/firestore";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
 import { calculateTotals, Transaction, TransactionType } from "../../lib/finance";
-import { db } from "../../lib/firebase";
+import { auth, db } from "../../lib/firebase";
 
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
+const FIRESTORE_BASE = "https://firestore.googleapis.com/v1/projects/life-boost-ai/databases/(default)/documents";
+const FIREBASE_API_KEY = "AIzaSyCFvsz5ZKHircfQ8CgvPxf2E_f-tDGWuKg";
 
 type SyncState = "idle" | "syncing" | "synced" | "error";
 
@@ -22,6 +24,70 @@ function getFirebaseErrorMessage(error: unknown) {
     "deadline-exceeded": "Firebase tardó demasiado en responder. Inténtalo nuevamente.",
   };
   return messages[code] || (error instanceof Error ? error.message : "No se pudo sincronizar con Firebase.");
+}
+
+function firestoreValue(value: unknown) {
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "number" && Number.isInteger(value)) return { integerValue: String(value) };
+  if (typeof value === "number") return { doubleValue: value };
+  return { stringValue: String(value ?? "") };
+}
+
+function fromFirestoreDocument(document: any): Transaction {
+  const fields = document.fields || {};
+  const read = (name: string) => {
+    const field = fields[name];
+    if (!field) return "";
+    if ("stringValue" in field) return field.stringValue;
+    if ("integerValue" in field) return Number(field.integerValue);
+    if ("doubleValue" in field) return Number(field.doubleValue);
+    return "";
+  };
+  const name = String(document.name || "");
+  const id = name.split("/").pop() || crypto.randomUUID();
+  return {
+    id,
+    description: String(read("description")),
+    amount: Number(read("amount")) || 0,
+    type: String(read("type")) as TransactionType,
+    category: String(read("category")),
+    date: String(read("date")) || new Date().toISOString(),
+  };
+}
+
+async function getIdToken() {
+  const currentUser = auth.currentUser;
+  if (!currentUser) throw new Error("No hay una sesión de Firebase activa.");
+  return currentUser.getIdToken(true);
+}
+
+async function restRequest(path: string, options: RequestInit = {}) {
+  const token = await getIdToken();
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(`${FIRESTORE_BASE}/${path}${path.includes("?") ? "&" : "?"}key=${FIREBASE_API_KEY}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    const text = await response.text();
+    let data: any = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+    if (!response.ok) {
+      const message = data?.error?.message || `Firestore respondió ${response.status}.`;
+      const error = new Error(message) as Error & { code?: string };
+      error.code = data?.error?.status === "PERMISSION_DENIED" ? "permission-denied" : "";
+      throw error;
+    }
+    return data;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 export default function FinancesPage() {
@@ -43,43 +109,51 @@ export default function FinancesPage() {
       return;
     }
 
+    let active = true;
     setSyncState("syncing");
     setSyncError("");
 
     const transactionsRef = collection(db, "users", user.uid, "transactions");
-    let serverConfirmed = false;
-
     const unsubscribe = onSnapshot(
       transactionsRef,
       { includeMetadataChanges: true },
       (snap) => {
+        if (!active) return;
         const nextTransactions = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Transaction));
         setTransactions(nextTransactions);
-
-        const pendingWrites = snap.metadata.hasPendingWrites;
-        serverConfirmed = !snap.metadata.fromCache && !pendingWrites;
-        setSyncState(serverConfirmed ? "synced" : "syncing");
-        if (serverConfirmed) setSyncError("");
+        if (!snap.metadata.fromCache && !snap.metadata.hasPendingWrites) {
+          setSyncState("synced");
+          setSyncError("");
+        }
       },
       (error) => {
         console.error("LifeBoost AI Firestore listener error:", error);
-        setSyncState("error");
-        setSyncError(`No se pudieron sincronizar tus movimientos. ${getFirebaseErrorMessage(error)}`);
+        if (active) {
+          setSyncState("error");
+          setSyncError(`No se pudieron sincronizar tus movimientos. ${getFirebaseErrorMessage(error)}`);
+        }
       },
     );
 
-    // Do not leave the interface saying "Sincronizando..." forever when the
-    // browser cannot reach Firestore. The local snapshot may still be visible,
-    // but we must clearly tell the user that the server has not confirmed it.
-    const timeout = window.setTimeout(() => {
-      if (!serverConfirmed) {
-        setSyncState("error");
-        setSyncError("Firebase todavía no ha confirmado la sincronización. Comprueba tu conexión y vuelve a cargar la página antes de confiar en que un movimiento quedó guardado en la nube.");
-      }
-    }, 12000);
+    // REST is the authoritative fallback for production/mobile browsers.
+    restRequest(`users/${encodeURIComponent(user.uid)}/transactions?pageSize=100`)
+      .then((data) => {
+        if (!active) return;
+        const remote = Array.isArray(data?.documents) ? data.documents.map(fromFirestoreDocument) : [];
+        setTransactions(remote);
+        setSyncState("synced");
+        setSyncError("");
+      })
+      .catch((error) => {
+        console.error("LifeBoost AI Firestore REST read error:", error);
+        if (active && transactions.length === 0) {
+          setSyncState("error");
+          setSyncError(`No se pudieron cargar los datos desde Firebase. ${getFirebaseErrorMessage(error)}`);
+        }
+      });
 
     return () => {
-      window.clearTimeout(timeout);
+      active = false;
       unsubscribe();
     };
   }, [user]);
@@ -89,59 +163,63 @@ export default function FinancesPage() {
   async function addTransaction(event: FormEvent) {
     event.preventDefault();
     const value = Number(amount);
-
     if (!user || !description.trim() || !Number.isFinite(value) || value <= 0 || saving) return;
 
     setSaving(true);
     setSyncState("syncing");
     setSyncError("");
 
+    const newTransaction: Omit<Transaction, "id"> = {
+      description: description.trim(),
+      amount: value,
+      type,
+      category,
+      date: new Date().toISOString(),
+    };
+
     try {
-      await addDoc(collection(db, "users", user.uid, "transactions"), {
-        description: description.trim(),
-        amount: value,
-        type,
-        category,
-        date: new Date().toISOString(),
-        createdAt: serverTimestamp(),
+      // Write directly to Firestore REST with the signed-in user's ID token.
+      // This avoids a mobile-browser Firestore listener staying in local pending state.
+      const data = await restRequest(`users/${encodeURIComponent(user.uid)}/transactions`, {
+        method: "POST",
+        body: JSON.stringify({
+          fields: {
+            description: firestoreValue(newTransaction.description),
+            amount: firestoreValue(newTransaction.amount),
+            type: firestoreValue(newTransaction.type),
+            category: firestoreValue(newTransaction.category),
+            date: firestoreValue(newTransaction.date),
+          },
+        }),
       });
 
-      // addDoc can update the local cache before the backend confirms the
-      // write. Wait explicitly for the pending write to reach Firestore.
-      await Promise.race([
-        waitForPendingWrites(db),
-        new Promise<never>((_, reject) =>
-          window.setTimeout(() => reject(new Error("deadline-exceeded")), 12000),
-        ),
-      ]);
-
+      const saved = fromFirestoreDocument(data);
+      setTransactions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setDescription("");
       setAmount("");
       setSyncState("synced");
+      setSyncError("");
     } catch (error) {
-      console.error("LifeBoost AI Firestore write error:", error);
+      console.error("LifeBoost AI Firestore REST write error:", error);
       setSyncState("error");
-      setSyncError(`El movimiento no recibió confirmación de Firebase. ${getFirebaseErrorMessage(error)}`);
+      setSyncError(`El movimiento no pudo guardarse en Firebase. ${getFirebaseErrorMessage(error)}`);
     } finally {
       setSaving(false);
     }
   }
 
   async function removeTransaction(id: string) {
-    if (!user) return;
-
+    if (!user || !id) return;
+    setSyncState("syncing");
+    setSyncError("");
     try {
-      await deleteDoc(doc(db, "users", user.uid, "transactions", id));
-      await Promise.race([
-        waitForPendingWrites(db),
-        new Promise<never>((_, reject) =>
-          window.setTimeout(() => reject(new Error("deadline-exceeded")), 12000),
-        ),
-      ]);
+      await restRequest(`users/${encodeURIComponent(user.uid)}/transactions/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setTransactions((current) => current.filter((item) => item.id !== id));
+      setSyncState("synced");
     } catch (error) {
-      console.error("LifeBoost AI Firestore delete error:", error);
+      console.error("LifeBoost AI Firestore REST delete error:", error);
       setSyncState("error");
-      setSyncError(`No se pudo confirmar la eliminación. ${getFirebaseErrorMessage(error)}`);
+      setSyncError(`No se pudo confirmar la eliminación en Firebase. ${getFirebaseErrorMessage(error)}`);
     }
   }
 
@@ -160,11 +238,7 @@ export default function FinancesPage() {
             </span>
           </div>
 
-          {syncError && (
-            <div className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">
-              {syncError}
-            </div>
-          )}
+          {syncError && <div className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">{syncError}</div>}
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             <Summary label="Ingresos" value={totals.income} />
@@ -204,13 +278,12 @@ export default function FinancesPage() {
               </div>
 
               <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
-                {saving ? "Guardando… esperando Firebase" : "Agregar movimiento"}
+                {saving ? "Guardando en Firebase…" : "Agregar movimiento"}
               </button>
             </form>
 
             <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
               <h2 className="text-xl font-semibold">Movimientos recientes</h2>
-
               {transactions.length === 0 ? (
                 <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
                   {syncState === "error" ? "No se pudieron cargar los movimientos." : "Todavía no tienes movimientos."}
@@ -223,9 +296,7 @@ export default function FinancesPage() {
                         <p className="truncate font-medium">{t.description}</p>
                         <p className="text-sm text-slate-500">{t.category} · {new Date(t.date).toLocaleDateString()}</p>
                       </div>
-                      <p className={t.type === "income" ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>
-                        {t.type === "income" ? "+" : "-"}${t.amount.toFixed(2)}
-                      </p>
+                      <p className={t.type === "income" ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>{t.type === "income" ? "+" : "-"}${t.amount.toFixed(2)}</p>
                       <button type="button" onClick={() => removeTransaction(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
                     </div>
                   ))}
