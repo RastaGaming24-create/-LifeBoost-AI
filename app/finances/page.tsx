@@ -6,12 +6,12 @@ import { collection, deleteDoc, doc, onSnapshot } from "firebase/firestore";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
-import { calculateTotals, Transaction, TransactionType } from "../../lib/finance";
+import { calculateTotals, IncomeFrequency, Transaction, TransactionType } from "../../lib/finance";
 import { auth, db } from "../../lib/firebase";
 
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
 const FIRESTORE_BASE = "https://firestore.googleapis.com/v1/projects/life-boost-ai/databases/(default)/documents";
-const FIREBASE_API_KEY = "AIzaSyCFvsz5ZKHircfQ8CgvPxf2E_f-tDGWuKg";
+const FIREBASE_API_KEY = "AIzaSyCFvsz5ZKHirQ8fC8gvPxf2E_f-tDGWuKg";
 
 type SyncState = "idle" | "syncing" | "synced" | "error";
 
@@ -45,13 +45,15 @@ function fromFirestoreDocument(document: any): Transaction {
   };
   const name = String(document.name || "");
   const id = name.split("/").pop() || crypto.randomUUID();
+  const type = String(read("type")) as TransactionType;
   return {
     id,
     description: String(read("description")),
     amount: Number(read("amount")) || 0,
-    type: String(read("type")) as TransactionType,
+    type,
     category: String(read("category")),
     date: String(read("date")) || new Date().toISOString(),
+    ...(type === "income" ? { frequency: (String(read("frequency")) || "once") as IncomeFrequency } : {}),
   };
 }
 
@@ -97,6 +99,7 @@ export default function FinancesPage() {
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<TransactionType>("expense");
   const [category, setCategory] = useState("Otros");
+  const [frequency, setFrequency] = useState<IncomeFrequency>("monthly");
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncError, setSyncError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -135,7 +138,6 @@ export default function FinancesPage() {
       },
     );
 
-    // REST is the authoritative fallback for production/mobile browsers.
     restRequest(`users/${encodeURIComponent(user.uid)}/transactions?pageSize=100`)
       .then((data) => {
         if (!active) return;
@@ -173,24 +175,24 @@ export default function FinancesPage() {
       description: description.trim(),
       amount: value,
       type,
-      category,
+      category: type === "income" ? "Ingresos" : category,
       date: new Date().toISOString(),
+      ...(type === "income" ? { frequency } : {}),
     };
 
     try {
-      // Write directly to Firestore REST with the signed-in user's ID token.
-      // This avoids a mobile-browser Firestore listener staying in local pending state.
+      const fields: Record<string, ReturnType<typeof firestoreValue>> = {
+        description: firestoreValue(newTransaction.description),
+        amount: firestoreValue(newTransaction.amount),
+        type: firestoreValue(newTransaction.type),
+        category: firestoreValue(newTransaction.category),
+        date: firestoreValue(newTransaction.date),
+      };
+      if (type === "income") fields.frequency = firestoreValue(frequency);
+
       const data = await restRequest(`users/${encodeURIComponent(user.uid)}/transactions`, {
         method: "POST",
-        body: JSON.stringify({
-          fields: {
-            description: firestoreValue(newTransaction.description),
-            amount: firestoreValue(newTransaction.amount),
-            type: firestoreValue(newTransaction.type),
-            category: firestoreValue(newTransaction.category),
-            date: firestoreValue(newTransaction.date),
-          },
-        }),
+        body: JSON.stringify({ fields }),
       });
 
       const saved = fromFirestoreDocument(data);
@@ -240,8 +242,10 @@ export default function FinancesPage() {
 
           {syncError && <div className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">{syncError}</div>}
 
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            <Summary label="Ingresos" value={totals.income} />
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <Summary label="Ingresos registrados" value={totals.income} />
+            <Summary label="Ingreso semanal" value={totals.recurringWeekly} />
+            <Summary label="Ingreso mensual" value={totals.recurringMonthly} />
             <Summary label="Gastos" value={totals.expenses} />
             <Summary label="Balance" value={totals.balance} />
           </div>
@@ -252,7 +256,7 @@ export default function FinancesPage() {
 
               <label className="mt-5 block text-sm text-slate-400">
                 Descripción
-                <input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Ej. Renta" />
+                <input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Ej. Salario" />
               </label>
 
               <label className="mt-4 block text-sm text-slate-400">
@@ -271,11 +275,23 @@ export default function FinancesPage() {
 
                 <label className="text-sm text-slate-400">
                   Categoría
-                  <select value={category} onChange={(e) => setCategory(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
-                    {categories.map((item) => <option key={item}>{item}</option>)}
+                  <select value={type === "income" ? "Ingresos" : category} disabled={type === "income"} onChange={(e) => setCategory(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white disabled:opacity-60">
+                    {type === "income" ? <option>Ingresos</option> : categories.map((item) => <option key={item}>{item}</option>)}
                   </select>
                 </label>
               </div>
+
+              {type === "income" && (
+                <label className="mt-4 block text-sm text-slate-400">
+                  Frecuencia del ingreso
+                  <select value={frequency} onChange={(e) => setFrequency(e.target.value as IncomeFrequency)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
+                    <option value="once">Una sola vez</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensual</option>
+                  </select>
+                  <span className="mt-2 block text-xs text-slate-500">LifeBoost AI calculará automáticamente el equivalente semanal y mensual para ayudarte con tu presupuesto.</span>
+                </label>
+              )}
 
               <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
                 {saving ? "Guardando en Firebase…" : "Agregar movimiento"}
@@ -294,7 +310,10 @@ export default function FinancesPage() {
                     <div key={t.id} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium">{t.description}</p>
-                        <p className="text-sm text-slate-500">{t.category} · {new Date(t.date).toLocaleDateString()}</p>
+                        <p className="text-sm text-slate-500">
+                          {t.category} · {new Date(t.date).toLocaleDateString()}
+                          {t.type === "income" && t.frequency && t.frequency !== "once" ? ` · ${t.frequency === "weekly" ? "Semanal" : "Mensual"}` : ""}
+                        </p>
                       </div>
                       <p className={t.type === "income" ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>{t.type === "income" ? "+" : "-"}${t.amount.toFixed(2)}</p>
                       <button type="button" onClick={() => removeTransaction(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
