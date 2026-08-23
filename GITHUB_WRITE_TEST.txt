@@ -1,2 +1,0 @@
-GitHub write-access test for LifeBoost AI.
-This temporary file verifies that ChatGPT can write to the repository.
