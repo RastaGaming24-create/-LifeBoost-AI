@@ -259,10 +259,23 @@ export default function FinancesPage() {
                 <input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Ej. Salario" />
               </label>
 
-              <label className="mt-4 block text-sm text-slate-400">
-                Monto
-                <input required type="number" min="0.01" max="100000000" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="0.00" />
-              </label>
+              <div className={type === "income" ? "mt-4 grid grid-cols-2 gap-3" : "mt-4"}>
+                <label className="block text-sm text-slate-400">
+                  Monto
+                  <input required type="number" min="0.01" max="100000000" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="0.00" />
+                </label>
+
+                {type === "income" && (
+                  <label className="block text-sm text-slate-400">
+                    Frecuencia
+                    <select value={frequency} onChange={(e) => setFrequency(e.target.value as IncomeFrequency)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
+                      <option value="weekly">Semanal</option>
+                      <option value="monthly">Mensual</option>
+                      <option value="once">Una sola vez</option>
+                    </select>
+                  </label>
+                )}
+              </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <label className="text-sm text-slate-400">
@@ -282,15 +295,7 @@ export default function FinancesPage() {
               </div>
 
               {type === "income" && (
-                <label className="mt-4 block text-sm text-slate-400">
-                  Frecuencia del ingreso
-                  <select value={frequency} onChange={(e) => setFrequency(e.target.value as IncomeFrequency)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
-                    <option value="once">Una sola vez</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="monthly">Mensual</option>
-                  </select>
-                  <span className="mt-2 block text-xs text-slate-500">LifeBoost AI calculará automáticamente el equivalente semanal y mensual para ayudarte con tu presupuesto.</span>
-                </label>
+                <p className="mt-3 text-xs text-slate-500">Elige si este ingreso es semanal o mensual. LifeBoost AI calculará automáticamente el equivalente para tu presupuesto.</p>
               )}
 
               <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
