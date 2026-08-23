@@ -3,32 +3,10 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import Navbar from "../../components/Navbar";
+import AuthGuard from "../../components/AuthGuard";
 
 export default function AIPage() {
-  const [message, setMessage] = useState("");
-  const [reply, setReply] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function askAI(e: FormEvent) {
-    e.preventDefault(); if (!message.trim() || loading) return;
-    setLoading(true); setError(""); setReply("");
-    try {
-      const response = await fetch("/api/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Error al consultar la IA");
-      setReply(data.reply || "No recibí una respuesta.");
-    } catch (err) { setError(err instanceof Error ? err.message : "No se pudo conectar con LifeBoost AI."); }
-    finally { setLoading(false); }
-  }
-
-  return <main className="min-h-screen bg-slate-950 text-white"><Navbar /><div className="mx-auto max-w-5xl px-6 py-12 lg:px-8">
-    <p className="text-sm font-medium text-blue-400">LifeBoost Intelligence</p><h1 className="mt-2 text-4xl font-bold">Asistente IA</h1><p className="mt-3 max-w-2xl text-slate-400">Pregúntale a LifeBoost AI sobre presupuesto, ahorro, deudas y metas.</p>
-    <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-      <form onSubmit={askAI}><label className="text-sm text-slate-400">¿Qué quieres analizar?<textarea required value={message} onChange={e => setMessage(e.target.value)} rows={5} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Ej. ¿Cómo puedo ahorrar más dinero cada mes?" /></label><button disabled={loading} className="mt-4 rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">{loading ? "Analizando..." : "Preguntar a LifeBoost AI"}</button></form>
-      {error && <p className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">{error}</p>}
-      {reply && <div className="mt-6 rounded-xl border border-blue-500/20 bg-blue-500/5 p-5"><p className="text-xs font-semibold uppercase tracking-wide text-blue-400">LifeBoost AI</p><p className="mt-3 whitespace-pre-wrap leading-7 text-slate-200">{reply}</p></div>}
-    </div>
-    <p className="mt-4 text-xs text-slate-500">La clave de OpenAI se mantiene en el servidor y nunca se envía al navegador.</p><Link href="/dashboard" className="mt-8 inline-block rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold hover:bg-slate-800">Volver al Dashboard</Link>
-  </div></main>;
+  const [message, setMessage] = useState(""); const [reply, setReply] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
+  async function askAI(e: FormEvent) { e.preventDefault(); if (!message.trim() || loading) return; setLoading(true); setError(""); setReply(""); try { const response = await fetch("/api/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Error al consultar la IA"); setReply(data.reply || "No recibí una respuesta."); } catch (err) { setError(err instanceof Error ? err.message : "No se pudo conectar con LifeBoost AI."); } finally { setLoading(false); } }
+  return <AuthGuard><main className="min-h-screen bg-slate-950 text-white"><Navbar /><div className="mx-auto max-w-5xl px-6 py-12 lg:px-8"><p className="text-sm font-medium text-blue-400">LifeBoost Intelligence</p><h1 className="mt-2 text-4xl font-bold">Asistente IA</h1><p className="mt-3 max-w-2xl text-slate-400">Pregúntale a LifeBoost AI sobre presupuesto, ahorro, deudas y metas.</p><div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-6"><form onSubmit={askAI}><label className="text-sm text-slate-400">¿Qué quieres analizar?<textarea required value={message} onChange={e => setMessage(e.target.value)} rows={5} maxLength={4000} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-blue-500" placeholder="Ej. ¿Cómo puedo ahorrar más dinero cada mes?" /><span className="mt-1 block text-right text-xs text-slate-600">{message.length}/4000</span></label><button disabled={loading} className="mt-4 rounded-xl bg-blue-600 px-5 py-3 font-semibold disabled:opacity-50">{loading ? "Analizando..." : "Preguntar a LifeBoost AI"}</button></form>{error && <p className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">{error}</p>}{reply && <div className="mt-6 rounded-xl border border-blue-500/20 bg-blue-500/5 p-5"><p className="text-xs font-semibold uppercase tracking-wide text-blue-400">LifeBoost AI</p><p className="mt-3 whitespace-pre-wrap leading-7 text-slate-200">{reply}</p></div>}</div><p className="mt-4 text-xs text-slate-500">La clave de OpenAI se mantiene en el servidor y nunca se envía al navegador.</p><Link href="/dashboard" className="mt-8 inline-block rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold">Volver al Dashboard</Link></div></main></AuthGuard>;
 }
