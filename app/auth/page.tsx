@@ -7,6 +7,26 @@ import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db, firebaseConfigured } from "../../lib/firebase";
 import { useAuth } from "../../components/AuthProvider";
 
+function firebaseAuthMessage(err: unknown) {
+  const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
+  const messages: Record<string, string> = {
+    "auth/too-many-requests": "Firebase bloqueó temporalmente los intentos por demasiadas solicitudes. Espera unos minutos y vuelve a intentarlo. Si necesitas entrar ahora, usa «Continuar con Google».",
+    "auth/invalid-credential": "El correo o la contraseña no son correctos.",
+    "auth/invalid-email": "El correo electrónico no es válido.",
+    "auth/user-disabled": "Esta cuenta está deshabilitada. Contacta al administrador.",
+    "auth/popup-closed-by-user": "Se cerró la ventana de Google antes de completar el acceso.",
+    "auth/popup-blocked": "El navegador bloqueó la ventana de Google. Permite ventanas emergentes para LifeBoost AI e inténtalo de nuevo.",
+    "auth/account-exists-with-different-credential": "Ya existe una cuenta con este correo usando otro método de acceso. Entra con ese método primero.",
+    "permission-denied": "Firebase rechazó el acceso a los datos del perfil. Verifica las reglas de Firestore.",
+  };
+  if (messages[code]) return messages[code];
+  return err instanceof Error ? err.message : "No se pudo completar la operación.";
+}
+
+function getErrorCode(err: unknown) {
+  return err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
+}
+
 function AuthPageContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -28,6 +48,7 @@ function AuthPageContent() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (busy || googleBusy) return;
     setBusy(true);
     setError("");
     setMessage("");
@@ -56,13 +77,14 @@ function AuthPageContent() {
         router.replace(params.get("next") || "/dashboard");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo completar la operación.");
+      setError(firebaseAuthMessage(err));
     } finally {
       setBusy(false);
     }
   }
 
   async function signInWithGoogle() {
+    if (busy || googleBusy) return;
     setGoogleBusy(true);
     setError("");
     setMessage("");
@@ -89,26 +111,14 @@ function AuthPageContent() {
       }
       router.replace(params.get("next") || "/dashboard");
     } catch (err) {
-      const code = err && typeof err === "object" && "code" in err ? String((err as { code?: string }).code) : "";
-      const friendly =
-        code === "auth/popup-closed-by-user"
-          ? "Se cerró la ventana de Google antes de completar el acceso."
-          : code === "auth/popup-blocked"
-            ? "El navegador bloqueó la ventana de Google. Permite ventanas emergentes para LifeBoost AI e inténtalo de nuevo."
-            : code === "auth/account-exists-with-different-credential"
-              ? "Ya existe una cuenta con este correo usando otro método de acceso. Entra con ese método primero."
-              : code === "permission-denied"
-                ? "Firebase rechazó el acceso a los datos del perfil. Verifica las reglas de Firestore."
-                : err instanceof Error
-                  ? err.message
-                  : "No se pudo iniciar sesión con Google.";
-      setError(friendly);
+      setError(firebaseAuthMessage(err));
     } finally {
       setGoogleBusy(false);
     }
   }
 
   async function resetPassword() {
+    if (busy || googleBusy) return;
     if (!email.trim()) {
       setError("Escribe tu correo primero.");
       return;
@@ -120,7 +130,8 @@ function AuthPageContent() {
       await sendPasswordResetEmail(auth, email.trim());
       setMessage("Si la cuenta existe, recibirás instrucciones para restablecer la contraseña.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo enviar el correo.");
+      const code = getErrorCode(err);
+      setError(code === "auth/too-many-requests" ? "Firebase bloqueó temporalmente las solicitudes. Espera unos minutos antes de pedir otro correo." : firebaseAuthMessage(err));
     } finally {
       setBusy(false);
     }
