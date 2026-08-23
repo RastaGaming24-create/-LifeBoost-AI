@@ -1,53 +1,29 @@
-"use client";
-
 import Link from "next/link";
 import Logo from "./Logo";
 
+const links = [
+  ["Inicio", "/"],
+  ["Dashboard", "/dashboard"],
+  ["Finanzas", "/finances"],
+  ["Metas", "/goals"],
+  ["IA", "/ai"],
+] as const;
+
 export default function Navbar() {
   return (
-    <nav className="w-full h-16 bg-slate-950 border-b border-slate-800 flex items-center justify-between px-8">
-
-      <Logo />
-
-      <div className="flex gap-8">
-
-        <Link
-          href="/"
-          className="text-white hover:text-blue-400 transition-colors"
-        >
-          Inicio
+    <nav className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur">
+      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8">
+        <Link href="/" aria-label="LifeBoost AI - Inicio" className="shrink-0">
+          <Logo />
         </Link>
-
-        <Link
-          href="/dashboard"
-          className="text-white hover:text-blue-400 transition-colors"
-        >
-          Dashboard
-        </Link>
-
-        <Link
-          href="/finances"
-          className="text-white hover:text-blue-400 transition-colors"
-        >
-          Finanzas
-        </Link>
-
-        <Link
-          href="/goals"
-          className="text-white hover:text-blue-400 transition-colors"
-        >
-          Metas
-        </Link>
-
-        <Link
-          href="/ai"
-          className="text-white hover:text-blue-400 transition-colors"
-        >
-          IA
-        </Link>
-
+        <div className="flex max-w-full items-center gap-1 overflow-x-auto pb-1 sm:gap-2">
+          {links.map(([label, href]) => (
+            <Link key={href} href={href} className="whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition hover:bg-slate-800 hover:text-white">
+              {label}
+            </Link>
+          ))}
+        </div>
       </div>
-
     </nav>
   );
 }
