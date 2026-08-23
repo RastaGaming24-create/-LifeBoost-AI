@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, waitForPendingWrites } from "firebase/firestore";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
@@ -12,6 +12,17 @@ import { db } from "../../lib/firebase";
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
 
 type SyncState = "idle" | "syncing" | "synced" | "error";
+
+function getFirebaseErrorMessage(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? String((error as { code?: string }).code) : "";
+  const messages: Record<string, string> = {
+    "permission-denied": "Firebase rechazó el acceso. Verifica las reglas de Firestore para tu cuenta.",
+    "failed-precondition": "Firestore no está disponible o necesita configuración adicional.",
+    "unavailable": "Firebase no respondió. Comprueba tu conexión a Internet e inténtalo nuevamente.",
+    "deadline-exceeded": "Firebase tardó demasiado en responder. Inténtalo nuevamente.",
+  };
+  return messages[code] || (error instanceof Error ? error.message : "No se pudo sincronizar con Firebase.");
+}
 
 export default function FinancesPage() {
   const { user } = useAuth();
@@ -36,22 +47,41 @@ export default function FinancesPage() {
     setSyncError("");
 
     const transactionsRef = collection(db, "users", user.uid, "transactions");
+    let serverConfirmed = false;
 
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       transactionsRef,
       { includeMetadataChanges: true },
       (snap) => {
         const nextTransactions = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Transaction));
         setTransactions(nextTransactions);
-        setSyncState(snap.metadata.fromCache ? "syncing" : "synced");
-        if (!snap.metadata.fromCache) setSyncError("");
+
+        const pendingWrites = snap.metadata.hasPendingWrites;
+        serverConfirmed = !snap.metadata.fromCache && !pendingWrites;
+        setSyncState(serverConfirmed ? "synced" : "syncing");
+        if (serverConfirmed) setSyncError("");
       },
       (error) => {
         console.error("LifeBoost AI Firestore listener error:", error);
         setSyncState("error");
-        setSyncError("No se pudieron cargar tus movimientos desde Firebase. Tus datos no se han eliminado; revisa tu conexión y vuelve a intentarlo.");
+        setSyncError(`No se pudieron sincronizar tus movimientos. ${getFirebaseErrorMessage(error)}`);
       },
     );
+
+    // Do not leave the interface saying "Sincronizando..." forever when the
+    // browser cannot reach Firestore. The local snapshot may still be visible,
+    // but we must clearly tell the user that the server has not confirmed it.
+    const timeout = window.setTimeout(() => {
+      if (!serverConfirmed) {
+        setSyncState("error");
+        setSyncError("Firebase todavía no ha confirmado la sincronización. Comprueba tu conexión y vuelve a cargar la página antes de confiar en que un movimiento quedó guardado en la nube.");
+      }
+    }, 12000);
+
+    return () => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+    };
   }, [user]);
 
   const totals = useMemo(() => calculateTotals(transactions), [transactions]);
@@ -63,6 +93,7 @@ export default function FinancesPage() {
     if (!user || !description.trim() || !Number.isFinite(value) || value <= 0 || saving) return;
 
     setSaving(true);
+    setSyncState("syncing");
     setSyncError("");
 
     try {
@@ -75,13 +106,22 @@ export default function FinancesPage() {
         createdAt: serverTimestamp(),
       });
 
+      // addDoc can update the local cache before the backend confirms the
+      // write. Wait explicitly for the pending write to reach Firestore.
+      await Promise.race([
+        waitForPendingWrites(db),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error("deadline-exceeded")), 12000),
+        ),
+      ]);
+
       setDescription("");
       setAmount("");
-      setSyncState("syncing");
+      setSyncState("synced");
     } catch (error) {
       console.error("LifeBoost AI Firestore write error:", error);
       setSyncState("error");
-      setSyncError("No se pudo guardar este movimiento en Firebase. No cierres la página hasta volver a intentarlo.");
+      setSyncError(`El movimiento no recibió confirmación de Firebase. ${getFirebaseErrorMessage(error)}`);
     } finally {
       setSaving(false);
     }
@@ -92,10 +132,16 @@ export default function FinancesPage() {
 
     try {
       await deleteDoc(doc(db, "users", user.uid, "transactions", id));
+      await Promise.race([
+        waitForPendingWrites(db),
+        new Promise<never>((_, reject) =>
+          window.setTimeout(() => reject(new Error("deadline-exceeded")), 12000),
+        ),
+      ]);
     } catch (error) {
       console.error("LifeBoost AI Firestore delete error:", error);
       setSyncState("error");
-      setSyncError("No se pudo eliminar el movimiento. Inténtalo nuevamente.");
+      setSyncError(`No se pudo confirmar la eliminación. ${getFirebaseErrorMessage(error)}`);
     }
   }
 
@@ -158,7 +204,7 @@ export default function FinancesPage() {
               </div>
 
               <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
-                {saving ? "Guardando..." : "Agregar movimiento"}
+                {saving ? "Guardando… esperando Firebase" : "Agregar movimiento"}
               </button>
             </form>
 
