@@ -1,5 +1,7 @@
 export type TransactionType = "income" | "expense";
 export type IncomeFrequency = "once" | "weekly" | "monthly";
+export type ExpenseFrequency = "once" | "weekly" | "monthly";
+export type TransactionFrequency = IncomeFrequency | ExpenseFrequency;
 
 export type Transaction = {
   id: string;
@@ -8,7 +10,7 @@ export type Transaction = {
   type: TransactionType;
   category: string;
   date: string;
-  frequency?: IncomeFrequency;
+  frequency?: TransactionFrequency;
 };
 
 export const defaultTransactions: Transaction[] = [
