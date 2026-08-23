@@ -2,11 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { collection, deleteDoc, doc, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
-import { calculateTotals, IncomeFrequency, Transaction, TransactionType } from "../../lib/finance";
+import { calculateTotals, ExpenseFrequency, IncomeFrequency, Transaction, TransactionFrequency, TransactionType } from "../../lib/finance";
 import { auth, db } from "../../lib/firebase";
 
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
@@ -46,6 +46,7 @@ function fromFirestoreDocument(document: any): Transaction {
   const name = String(document.name || "");
   const id = name.split("/").pop() || crypto.randomUUID();
   const type = String(read("type")) as TransactionType;
+  const rawFrequency = String(read("frequency"));
   return {
     id,
     description: String(read("description")),
@@ -53,7 +54,7 @@ function fromFirestoreDocument(document: any): Transaction {
     type,
     category: String(read("category")),
     date: String(read("date")) || new Date().toISOString(),
-    ...(type === "income" ? { frequency: (String(read("frequency")) || "once") as IncomeFrequency } : {}),
+    ...(rawFrequency ? { frequency: rawFrequency as TransactionFrequency } : {}),
   };
 }
 
@@ -99,7 +100,7 @@ export default function FinancesPage() {
   const [amount, setAmount] = useState("");
   const [type, setType] = useState<TransactionType>("expense");
   const [category, setCategory] = useState("Otros");
-  const [frequency, setFrequency] = useState<IncomeFrequency>("monthly");
+  const [frequency, setFrequency] = useState<TransactionFrequency>("once");
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncError, setSyncError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -177,7 +178,7 @@ export default function FinancesPage() {
       type,
       category: type === "income" ? "Ingresos" : category,
       date: new Date().toISOString(),
-      ...(type === "income" ? { frequency } : {}),
+      frequency,
     };
 
     try {
@@ -187,8 +188,8 @@ export default function FinancesPage() {
         type: firestoreValue(newTransaction.type),
         category: firestoreValue(newTransaction.category),
         date: firestoreValue(newTransaction.date),
+        frequency: firestoreValue(frequency),
       };
-      if (type === "income") fields.frequency = firestoreValue(frequency);
 
       const data = await restRequest(`users/${encodeURIComponent(user.uid)}/transactions`, {
         method: "POST",
@@ -199,6 +200,7 @@ export default function FinancesPage() {
       setTransactions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setDescription("");
       setAmount("");
+      setFrequency("once");
       setSyncState("synced");
       setSyncError("");
     } catch (error) {
@@ -223,6 +225,11 @@ export default function FinancesPage() {
       setSyncState("error");
       setSyncError(`No se pudo confirmar la eliminación en Firebase. ${getFirebaseErrorMessage(error)}`);
     }
+  }
+
+  function handleTypeChange(nextType: TransactionType) {
+    setType(nextType);
+    setFrequency("once");
   }
 
   return (
@@ -256,31 +263,29 @@ export default function FinancesPage() {
 
               <label className="mt-5 block text-sm text-slate-400">
                 Descripción
-                <input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Ej. Salario" />
+                <input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder={type === "income" ? "Ej. Salario" : "Ej. Renta"} />
               </label>
 
-              <div className={type === "income" ? "mt-4 grid grid-cols-2 gap-3" : "mt-4"}>
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <label className="block text-sm text-slate-400">
                   Monto
                   <input required type="number" min="0.01" max="100000000" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="0.00" />
                 </label>
 
-                {type === "income" && (
-                  <label className="block text-sm text-slate-400">
-                    Frecuencia
-                    <select value={frequency} onChange={(e) => setFrequency(e.target.value as IncomeFrequency)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
-                      <option value="weekly">Semanal</option>
-                      <option value="monthly">Mensual</option>
-                      <option value="once">Una sola vez</option>
-                    </select>
-                  </label>
-                )}
+                <label className="block text-sm text-slate-400">
+                  Frecuencia
+                  <select value={frequency} onChange={(e) => setFrequency(e.target.value as TransactionFrequency)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
+                    <option value="once">Una sola vez</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="monthly">Mensual</option>
+                  </select>
+                </label>
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3">
                 <label className="text-sm text-slate-400">
                   Tipo
-                  <select value={type} onChange={(e) => setType(e.target.value as TransactionType)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
+                  <select value={type} onChange={(e) => handleTypeChange(e.target.value as TransactionType)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
                     <option value="expense">Gasto</option>
                     <option value="income">Ingreso</option>
                   </select>
@@ -294,9 +299,11 @@ export default function FinancesPage() {
                 </label>
               </div>
 
-              {type === "income" && (
-                <p className="mt-3 text-xs text-slate-500">Elige si este ingreso es semanal o mensual. LifeBoost AI calculará automáticamente el equivalente para tu presupuesto.</p>
-              )}
+              <p className="mt-3 text-xs text-slate-500">
+                {type === "expense"
+                  ? "Indica si este gasto ocurre semanalmente, mensualmente o una sola vez."
+                  : "Indica si este ingreso ocurre semanalmente, mensualmente o una sola vez."}
+              </p>
 
               <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
                 {saving ? "Guardando en Firebase…" : "Agregar movimiento"}
@@ -317,7 +324,7 @@ export default function FinancesPage() {
                         <p className="truncate font-medium">{t.description}</p>
                         <p className="text-sm text-slate-500">
                           {t.category} · {new Date(t.date).toLocaleDateString()}
-                          {t.type === "income" && t.frequency && t.frequency !== "once" ? ` · ${t.frequency === "weekly" ? "Semanal" : "Mensual"}` : ""}
+                          {t.frequency && t.frequency !== "once" ? ` · ${t.frequency === "weekly" ? "Semanal" : "Mensual"}` : ""}
                         </p>
                       </div>
                       <p className={t.type === "income" ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>{t.type === "income" ? "+" : "-"}${t.amount.toFixed(2)}</p>
