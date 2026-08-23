@@ -35,8 +35,24 @@ export async function POST(request: Request) {
 
     const data = await response.json();
     if (!response.ok) {
+      const errorCode = data?.error?.code;
       console.error("OpenAI API error", data);
-      return NextResponse.json({ error: "OpenAI no pudo procesar la solicitud." }, { status: response.status >= 400 && response.status < 500 ? 400 : 502 });
+
+      if (errorCode === "insufficient_quota" || errorCode === "credit_balance_exhausted") {
+        return NextResponse.json(
+          {
+            error:
+              "LifeBoost AI no puede responder porque la cuenta de OpenAI no tiene créditos disponibles. Añade saldo a la cuenta asociada a OPENAI_API_KEY y vuelve a intentarlo.",
+            code: "credit_balance_exhausted",
+          },
+          { status: 503 },
+        );
+      }
+
+      return NextResponse.json(
+        { error: "OpenAI no pudo procesar la solicitud. Inténtalo de nuevo en unos minutos." },
+        { status: response.status >= 400 && response.status < 500 ? 400 : 502 },
+      );
     }
 
     return NextResponse.json({ reply: data.output_text || "No recibí una respuesta de la IA." });
