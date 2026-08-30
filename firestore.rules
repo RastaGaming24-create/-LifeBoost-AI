@@ -7,17 +7,22 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow create: if signedInAs(userId)
-        && request.resource.data.role == 'user';
+      allow create: if signedInAs(userId) && request.resource.data.role == 'user';
       allow read: if signedInAs(userId);
       allow update: if signedInAs(userId)
         && request.resource.data.role == resource.data.role
         && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if signedInAs(userId);
-
       match /{document=**} {
         allow read, write: if signedInAs(userId);
       }
+    }
+
+    match /bugReports/{reportId} {
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'open';
+      allow read, update, delete: if false;
     }
 
     match /{document=**} {
