@@ -11,6 +11,7 @@ export type Transaction = {
   category: string;
   date: string;
   frequency?: TransactionFrequency;
+  source?: "manual" | "plaid";
 };
 
 export const defaultTransactions: Transaction[] = [
@@ -19,71 +20,68 @@ export const defaultTransactions: Transaction[] = [
 
 const WEEKS_PER_MONTH = 52 / 12;
 
-function isCurrentMonth(date: string) {
+function validDate(date: string) {
   const value = new Date(date);
+  return Number.isFinite(value.getTime()) ? value : null;
+}
+
+function isCurrentMonth(date: string) {
+  const value = validDate(date);
   const now = new Date();
-  return Number.isFinite(value.getTime())
-    && value.getFullYear() === now.getFullYear()
-    && value.getMonth() === now.getMonth();
+  return Boolean(value && value.getFullYear() === now.getFullYear() && value.getMonth() === now.getMonth());
+}
+
+function isCurrentWeek(date: string) {
+  const value = validDate(date);
+  if (!value) return false;
+  const now = new Date();
+  const start = new Date(now);
+  const day = start.getDay();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - day);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  return value >= start && value < end;
 }
 
 export function calculateTotals(transactions: Transaction[]) {
-  // "Ingresos registrados" conserva el total histórico de movimientos.
-  const income = transactions
-    .filter((t) => t.type === "income")
-    .reduce((sum, t) => sum + t.amount, 0);
+  const income = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
 
-  const totalExpenses = transactions
-    .filter((t) => t.type === "expense")
-    .reduce((sum, t) => sum + t.amount, 0);
+  const recurringWeekly = transactions.filter((t) => t.type === "income" && t.frequency === "weekly").reduce((sum, t) => sum + t.amount, 0)
+    + transactions.filter((t) => t.type === "income" && t.frequency === "monthly").reduce((sum, t) => sum + t.amount / WEEKS_PER_MONTH, 0);
 
-  // Convierte todos los ingresos recurrentes a una misma base mensual.
-  // Un ingreso semanal de $100 equivale a $433.33/mes aproximadamente.
-  const recurringWeekly = transactions
-    .filter((t) => t.type === "income" && t.frequency === "weekly")
-    .reduce((sum, t) => sum + t.amount, 0)
-    + transactions
-      .filter((t) => t.type === "income" && t.frequency === "monthly")
-      .reduce((sum, t) => sum + t.amount / WEEKS_PER_MONTH, 0);
+  const recurringMonthly = transactions.filter((t) => t.type === "income" && t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0)
+    + transactions.filter((t) => t.type === "income" && t.frequency === "weekly").reduce((sum, t) => sum + t.amount * WEEKS_PER_MONTH, 0);
 
-  const recurringMonthly = transactions
-    .filter((t) => t.type === "income" && t.frequency === "monthly")
-    .reduce((sum, t) => sum + t.amount, 0)
-    + transactions
-      .filter((t) => t.type === "income" && t.frequency === "weekly")
-      .reduce((sum, t) => sum + t.amount * WEEKS_PER_MONTH, 0);
+  const monthlyRecurringExpenses = transactions.filter((t) => t.type === "expense" && t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0)
+    + transactions.filter((t) => t.type === "expense" && t.frequency === "weekly").reduce((sum, t) => sum + t.amount * WEEKS_PER_MONTH, 0);
 
-  // Los gastos recurrentes también se convierten a base mensual para
-  // compararlos directamente contra el ingreso mensual.
-  const monthlyRecurringExpenses = transactions
-    .filter((t) => t.type === "expense" && t.frequency === "monthly")
-    .reduce((sum, t) => sum + t.amount, 0)
-    + transactions
-      .filter((t) => t.type === "expense" && t.frequency === "weekly")
-      .reduce((sum, t) => sum + t.amount * WEEKS_PER_MONTH, 0);
-
-  // Los gastos de una sola vez se consideran dentro del mes actual.
-  const currentMonthOneTimeExpenses = transactions
-    .filter((t) => t.type === "expense" && (!t.frequency || t.frequency === "once") && isCurrentMonth(t.date))
-    .reduce((sum, t) => sum + t.amount, 0);
-
+  const currentMonthOneTimeExpenses = transactions.filter((t) => t.type === "expense" && (!t.frequency || t.frequency === "once") && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const monthlyExpenses = monthlyRecurringExpenses + currentMonthOneTimeExpenses;
-
-  // El balance principal de Finanzas ahora representa lo que queda del
-  // ingreso mensual después de cubrir los gastos mensuales equivalentes.
   const monthlyBalance = recurringMonthly - monthlyExpenses;
   const expenseRate = recurringMonthly > 0 ? (monthlyExpenses / recurringMonthly) * 100 : 0;
+
+  // Real bank/manual transaction totals for the current calendar periods.
+  const weeklyIncome = transactions.filter((t) => t.type === "income" && isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
+  const currentMonthIncome = transactions.filter((t) => t.type === "income" && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
+  const weeklyExpenses = transactions.filter((t) => t.type === "expense" && isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
+  const currentMonthExpenses = transactions.filter((t) => t.type === "expense" && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
 
   return {
     income,
     expenses: monthlyExpenses,
     totalExpenses,
     balance: monthlyBalance,
-    monthlyIncome: recurringMonthly,
-    monthlyExpenses,
+    monthlyIncome: currentMonthIncome || recurringMonthly,
+    monthlyExpenses: currentMonthExpenses || monthlyExpenses,
     monthlyBalance,
     expenseRate,
     recurringWeekly,
     recurringMonthly,
+    weeklyIncome,
+    weeklyExpenses,
+    currentMonthIncome,
+    currentMonthExpenses,
   };
 }
