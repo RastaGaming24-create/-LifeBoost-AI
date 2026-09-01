@@ -6,7 +6,7 @@ import Logo from "./Logo";
 import { auth } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
 
-const links = [["Inicio", "/"], ["Dashboard", "/dashboard"], ["Finanzas", "/finances"], ["Metas", "/goals"], ["IA", "/ai"], ["Cuenta", "/account"]] as const;
+const links = [["Inicio", "/"], ["Dashboard", "/dashboard"], ["Finanzas", "/finances"], ["Banco", "/bank"], ["Metas", "/goals"], ["IA", "/ai"], ["Cuenta", "/account"]] as const;
 
 export default function Navbar() {
   const { user } = useAuth();
