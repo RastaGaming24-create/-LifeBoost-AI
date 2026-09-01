@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb, verifyBearerToken } from "../../../../lib/firebase-admin";
+import { adminDb, verifyBearerToken } from "../../../lib/firebase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
