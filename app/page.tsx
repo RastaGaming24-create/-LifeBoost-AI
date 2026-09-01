@@ -4,6 +4,7 @@ import Link from "next/link";
 import { collection, onSnapshot } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import Navbar from "../components/Navbar";
+import ShareLifeBoost from "../components/ShareLifeBoost";
 import { useAuth } from "../components/AuthProvider";
 import { calculateTotals, Transaction } from "../lib/finance";
 import { db } from "../lib/firebase";
@@ -70,6 +71,7 @@ export default function Home() {
 
       <section className="mx-auto max-w-7xl px-6 pb-16 lg:px-8">
         <div className="grid gap-5 md:grid-cols-3">{features.map((feature) => <article key={feature.title} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6"><h2 className="text-xl font-semibold">{feature.title}</h2><p className="mt-3 leading-7 text-slate-400">{feature.text}</p></article>)}</div>
+        <ShareLifeBoost />
         <footer className="mt-14 flex flex-wrap gap-5 border-t border-slate-800 pt-6 text-sm text-slate-500"><Link href="/privacy" className="hover:text-white">Privacidad</Link><Link href="/terms" className="hover:text-white">Términos</Link><Link href="/auth" className="hover:text-white">Cuenta</Link><span>© 2026 LifeBoost AI</span></footer>
       </section>
     </main>
