@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Facebook, Instagram, Mail, MessageCircle } from "lucide-react";
 
 const APP_URL = "https://life-boost-ai.vercel.app/";
 const SHARE_TEXT = "Estoy probando LifeBoost AI para organizar mis finanzas, controlar gastos y alcanzar metas. Pruébalo gratis:";
@@ -31,8 +32,14 @@ export default function ShareLifeBoost() {
     }
   }
 
+  async function shareInstagram() {
+    await copyLink();
+    window.open("https://www.instagram.com/", "_blank", "noopener,noreferrer");
+  }
+
   const encodedText = encodeURIComponent(`${SHARE_TEXT} ${APP_URL}`);
   const encodedUrl = encodeURIComponent(APP_URL);
+  const iconButton = "inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-950/50 text-slate-200 transition hover:border-blue-400/60 hover:bg-slate-900 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50";
 
   return (
     <section className="mt-10 rounded-3xl border border-blue-500/20 bg-blue-500/5 p-6 sm:p-8">
@@ -47,11 +54,11 @@ export default function ShareLifeBoost() {
           <button onClick={copyLink} className="rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 font-semibold text-white hover:bg-slate-800">Copiar enlace</button>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap gap-2 text-sm">
-        <a className="rounded-lg border border-slate-700 px-3 py-2 text-slate-300 hover:bg-slate-900" href={`https://wa.me/?text=${encodedText}`} target="_blank" rel="noopener noreferrer">WhatsApp</a>
-        <a className="rounded-lg border border-slate-700 px-3 py-2 text-slate-300 hover:bg-slate-900" href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`} target="_blank" rel="noopener noreferrer">Facebook</a>
-        <a className="rounded-lg border border-slate-700 px-3 py-2 text-slate-300 hover:bg-slate-900" href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(SHARE_TEXT)}&url=${encodedUrl}`} target="_blank" rel="noopener noreferrer">X</a>
-        <a className="rounded-lg border border-slate-700 px-3 py-2 text-slate-300 hover:bg-slate-900" href={`mailto:?subject=${encodeURIComponent("Prueba LifeBoost AI")}&body=${encodedText}`}>Correo</a>
+      <div className="mt-5 flex items-center gap-3" aria-label="Compartir en redes sociales">
+        <a aria-label="Compartir por WhatsApp" title="WhatsApp" className={iconButton} href={`https://wa.me/?text=${encodedText}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={21} /></a>
+        <a aria-label="Compartir en Facebook" title="Facebook" className={iconButton} href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`} target="_blank" rel="noopener noreferrer"><Facebook size={21} /></a>
+        <button aria-label="Compartir en Instagram" title="Instagram" className={iconButton} onClick={shareInstagram}><Instagram size={21} /></button>
+        <a aria-label="Compartir por correo" title="Correo" className={iconButton} href={`mailto:?subject=${encodeURIComponent("Prueba LifeBoost AI")}&body=${encodedText}`}><Mail size={21} /></a>
       </div>
     </section>
   );
