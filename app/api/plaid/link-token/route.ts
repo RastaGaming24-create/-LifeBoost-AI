@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { plaidClient } from "../../../../../lib/plaid";
-import { verifyBearerToken } from "../../../../../lib/firebase-admin";
+import { plaidClient } from "../../../../lib/plaid";
+import { verifyBearerToken } from "../../../../lib/firebase-admin";
 
 export const runtime = "nodejs";
 
