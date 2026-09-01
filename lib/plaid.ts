@@ -1,8 +1,32 @@
-import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from "plaid";
+import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
-const client = new PlaidApi(new Configuration({
-  basePath: PlaidEnvironments.sandbox,
-  baseOptions: { headers: { "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID ?? "", "PLAID-SECRET": process.env.PLAID_SECRET ?? "" } },
-}));
+let client: PlaidApi | null = null;
 
-export { client, Products, CountryCode };
+export function plaidClient() {
+  if (client) return client;
+  const clientId = process.env.PLAID_CLIENT_ID;
+  const secret = process.env.PLAID_SECRET;
+  if (!clientId || !secret) {
+    throw new Error("Plaid no está configurado. Faltan PLAID_CLIENT_ID y PLAID_SECRET.");
+  }
+
+  const environment = process.env.PLAID_ENV === "production"
+    ? PlaidEnvironments.production
+    : PlaidEnvironments.sandbox;
+
+  client = new PlaidApi(new Configuration({
+    basePath: environment,
+    baseOptions: {
+      headers: {
+        "PLAID-CLIENT-ID": clientId,
+        "PLAID-SECRET": secret,
+      },
+    },
+  }));
+
+  return client;
+}
+
+export function plaidEnvironment() {
+  return process.env.PLAID_ENV === "production" ? "production" : "sandbox";
+}
