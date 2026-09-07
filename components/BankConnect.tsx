@@ -5,9 +5,12 @@ import { usePlaidLink, PlaidLinkOnSuccess } from "react-plaid-link";
 import { auth } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
 
+const PLAID_TOKEN_STORAGE_KEY = "lifeboost_plaid_link_token";
+
 export default function BankConnect() {
   const { user } = useAuth();
   const [token, setToken] = useState<string | null>(null);
+  const [receivedRedirectUri, setReceivedRedirectUri] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -30,8 +33,11 @@ export default function BankConnect() {
       setLoading(true);
       setError("");
       setStatus("Conexión autorizada. Guardando cuenta de forma segura…");
+      sessionStorage.removeItem(PLAID_TOKEN_STORAGE_KEY);
+
       const idToken = await auth.currentUser?.getIdToken(true);
       if (!idToken) throw new Error("Tu sesión expiró. Inicia sesión nuevamente.");
+      if (!publicToken) throw new Error("Plaid no devolvió el token de conexión.");
 
       const exchange = await fetch("/api/plaid/exchange", {
         method: "POST",
@@ -49,8 +55,13 @@ export default function BankConnect() {
       const syncData = await sync.json();
       if (!sync.ok) throw new Error(syncData.error || "La cuenta se conectó, pero no se pudieron sincronizar los movimientos.");
 
+      if (typeof window !== "undefined") {
+        const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
       setStatus(`Banco conectado. ${Number(syncData.added || 0)} movimientos sincronizados.`);
       setToken(null);
+      setReceivedRedirectUri(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo conectar el banco.");
       setStatus("");
@@ -61,12 +72,41 @@ export default function BankConnect() {
 
   const config = usePlaidLink({
     token,
+    receivedRedirectUri,
     onSuccess,
-    onExit: () => {
+    onExit: (exitError) => {
       setLoading(false);
       setToken(null);
+      setReceivedRedirectUri(undefined);
+      sessionStorage.removeItem(PLAID_TOKEN_STORAGE_KEY);
+      if (exitError) {
+        setError(exitError.error_message || "No se pudo completar la conexión bancaria.");
+        setStatus("");
+      }
+    },
+    onEvent: (eventName) => {
+      if (eventName === "HANDOFF_EVENT") {
+        setStatus("Esperando el regreso seguro del banco…");
+      }
     },
   });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const savedToken = sessionStorage.getItem(PLAID_TOKEN_STORAGE_KEY);
+    const params = new URLSearchParams(window.location.search);
+    const hasOAuthRedirect = params.has("oauth_state_id");
+
+    if (savedToken) {
+      setToken(savedToken);
+      if (hasOAuthRedirect) {
+        setReceivedRedirectUri(window.location.href);
+        setLoading(true);
+        setStatus("Reanudando conexión segura con tu banco…");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (token && config.ready && !loading) config.open();
@@ -78,6 +118,8 @@ export default function BankConnect() {
       setError("");
       setStatus("Preparando conexión segura…");
       const nextToken = await getToken();
+      sessionStorage.setItem(PLAID_TOKEN_STORAGE_KEY, nextToken);
+      setReceivedRedirectUri(undefined);
       setToken(nextToken);
       setLoading(false);
       setStatus("");
