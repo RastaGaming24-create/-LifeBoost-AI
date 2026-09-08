@@ -21,8 +21,14 @@ export async function POST(request: Request) {
     } as any);
 
     return NextResponse.json({ link_token: response.data.link_token, environment: process.env.PLAID_ENV === "production" ? "production" : "sandbox" });
-  } catch (error) {
-    console.error("Plaid link token error:", error);
+  } catch (error: any) {
+    const plaidError = error?.response?.data;
+    console.error("Plaid link token error:", {
+      status: error?.response?.status ?? error?.status ?? null,
+      error_code: plaidError?.error_code ?? null,
+      error_message: plaidError?.error_message ?? null,
+      request_id: plaidError?.request_id ?? null,
+    });
     return NextResponse.json({ error: "No se pudo iniciar la conexión bancaria. Configura Plaid en Vercel y vuelve a intentarlo." }, { status: 503 });
   }
 }
