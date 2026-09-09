@@ -15,7 +15,19 @@ export async function syncPlaidItem(uid: string, itemId: string, accessToken: st
   let removed = 0;
 
   while (hasMore) {
-    const response = await plaidClient().transactionsSync({ access_token: accessToken, ...(cursor ? { cursor } : {}) } as any);
+    let response;
+    try {
+      response = await plaidClient().transactionsSync({ access_token: accessToken, ...(cursor ? { cursor } : {}) } as any);
+    } catch (error: any) {
+      const data = error?.response?.data;
+      console.error("Plaid transactions sync error:", {
+        status: error?.response?.status ?? error?.status ?? null,
+        error_code: data?.error_code ?? null,
+        error_message: data?.error_message ?? null,
+        request_id: data?.request_id ?? null,
+      });
+      throw error;
+    }
     const data = response.data as any;
     const userTransactions = adminDb().collection("users").doc(uid).collection("transactions");
 
