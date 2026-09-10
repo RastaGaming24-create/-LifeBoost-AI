@@ -45,10 +45,6 @@ function isCurrentWeek(date: string) {
   return value >= start && value < end;
 }
 
-// A real income is a deposit categorized by Plaid as INCOME, or a manual income entry.
-// TRANSFER_IN is intentionally excluded because moving money between a user's own
-// accounts is not new income. For legacy Plaid records without the stored category,
-// keep the previous negative-amount fallback until they are refreshed by Plaid.
 function isActualIncome(transaction: Transaction) {
   if (transaction.source !== "plaid") return transaction.type === "income";
   if (transaction.personalFinanceCategory) return transaction.personalFinanceCategory === "INCOME";
@@ -59,34 +55,35 @@ export function calculateTotals(transactions: Transaction[]) {
   const incomeTransactions = transactions.filter(isActualIncome);
   const expenseTransactions = transactions.filter((t) => t.type === "expense");
 
-  // Both weekly and monthly income are cumulative actual income for their period.
-  // A new deposit this week increases weekly income and also increases the current
-  // month's cumulative income automatically.
+  // Real cash-flow totals: only transactions that actually occurred in the period.
+  // Recurring frequency is metadata for planning and must never duplicate historical/current transactions.
   const weeklyIncome = incomeTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthIncome = incomeTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
-
-  const totalExpenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
-  const currentMonthExpenses = expenseTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const weeklyExpenses = expenseTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
+  const currentMonthExpenses = expenseTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
 
-  const monthlyRecurringExpenses = expenseTransactions.filter((t) => t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0)
+  const monthlyBalance = currentMonthIncome - currentMonthExpenses;
+  const expenseRate = currentMonthIncome > 0 ? (currentMonthExpenses / currentMonthIncome) * 100 : 0;
+
+  // Keep projections available separately for planning screens, but do not use them in real balance.
+  const recurringWeekly = incomeTransactions.filter((t) => t.frequency === "weekly").reduce((sum, t) => sum + t.amount, 0);
+  const recurringMonthly = incomeTransactions.filter((t) => t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0);
+  const projectedMonthlyExpenses = expenseTransactions.filter((t) => t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0)
     + expenseTransactions.filter((t) => t.frequency === "weekly").reduce((sum, t) => sum + t.amount * WEEKS_PER_MONTH, 0);
-  const currentMonthOneTimeExpenses = expenseTransactions.filter((t) => (!t.frequency || t.frequency === "once") && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
-  const monthlyExpenses = monthlyRecurringExpenses + currentMonthOneTimeExpenses;
-  const monthlyBalance = currentMonthIncome - monthlyExpenses;
-  const expenseRate = currentMonthIncome > 0 ? (monthlyExpenses / currentMonthIncome) * 100 : 0;
 
   return {
     income: currentMonthIncome,
-    expenses: monthlyExpenses,
+    expenses: currentMonthExpenses,
     totalExpenses,
     balance: monthlyBalance,
     monthlyIncome: currentMonthIncome,
-    monthlyExpenses: currentMonthExpenses || monthlyExpenses,
+    monthlyExpenses: currentMonthExpenses,
     monthlyBalance,
     expenseRate,
-    recurringWeekly: weeklyIncome,
-    recurringMonthly: currentMonthIncome,
+    recurringWeekly,
+    recurringMonthly,
+    projectedMonthlyExpenses,
     weeklyIncome,
     weeklyExpenses,
     currentMonthIncome,
