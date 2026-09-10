@@ -14,6 +14,23 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function classifyPlaidTransaction(transaction: any) {
+  const amount = Number(transaction.amount) || 0;
+  const primary = String(transaction.personal_finance_category?.primary ?? "").toUpperCase();
+
+  // Plaid uses positive amounts for money leaving the account and negative amounts
+  // for money entering it. Only deposits classified as INCOME are real income.
+  // TRANSFER_IN is deliberately not treated as income because it can be a transfer
+  // between the user's own accounts rather than new money.
+  const isIncome = amount < 0 && primary === "INCOME";
+  return {
+    amount: Math.abs(amount),
+    type: isIncome ? "income" : "expense",
+    category: isIncome ? "Ingresos" : (primary || transaction.category?.[0] || "Otros"),
+    personalFinanceCategory: primary || null,
+  };
+}
+
 export async function syncPlaidItem(uid: string, itemId: string, accessToken: string) {
   const itemRef = adminDb().collection("plaidItems").doc(itemId);
   const itemSnap = await itemRef.get();
@@ -53,19 +70,16 @@ export async function syncPlaidItem(uid: string, itemId: string, accessToken: st
         hasMore = Boolean(data.has_more);
       }
 
-      // Only persist transaction changes after every page has been fetched successfully.
-      // This makes a full pagination restart safe if Plaid mutates the dataset mid-loop.
       const userTransactions = adminDb().collection("users").doc(uid).collection("transactions");
 
       for (const transaction of pendingTransactions) {
-        const amount = Number(transaction.amount) || 0;
-        const isIncome = amount < 0;
+        const classified = classifyPlaidTransaction(transaction);
         const transactionId = String(transaction.transaction_id);
         await userTransactions.doc(`plaid_${transactionId}`).set({
           description: transaction.merchant_name || transaction.name || "Movimiento bancario",
-          amount: Math.abs(amount),
-          type: isIncome ? "income" : "expense",
-          category: isIncome ? "Ingresos" : (transaction.personal_finance_category?.primary || transaction.category?.[0] || "Otros"),
+          amount: classified.amount,
+          type: classified.type,
+          category: classified.category,
           date: transactionDate(transaction),
           frequency: "once",
           source: "plaid",
@@ -73,6 +87,7 @@ export async function syncPlaidItem(uid: string, itemId: string, accessToken: st
           plaidItemId: itemId,
           merchantName: transaction.merchant_name ?? null,
           accountId: transaction.account_id ?? null,
+          personalFinanceCategory: classified.personalFinanceCategory,
           updatedAt: new Date().toISOString(),
         }, { merge: true });
       }
@@ -97,8 +112,6 @@ export async function syncPlaidItem(uid: string, itemId: string, accessToken: st
         throw error;
       }
 
-      // Plaid requires restarting the entire pagination loop from the original cursor,
-      // not retrying only the page that failed.
       await sleep(500 * (attempt + 1));
     }
   }
