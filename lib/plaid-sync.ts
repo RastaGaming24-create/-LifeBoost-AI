@@ -15,19 +15,22 @@ function sleep(ms: number) {
 }
 
 function classifyPlaidTransaction(transaction: any) {
-  const amount = Number(transaction.amount) || 0;
+  const rawAmount = Number(transaction.amount) || 0;
   const primary = String(transaction.personal_finance_category?.primary ?? "").toUpperCase();
 
-  // Plaid uses positive amounts for money leaving the account and negative amounts
-  // for money entering it. Only deposits classified as INCOME are real income.
-  // TRANSFER_IN is deliberately not treated as income because it can be a transfer
-  // between the user's own accounts rather than new money.
-  const isIncome = amount < 0 && primary === "INCOME";
+  // Plaid's category is the source of truth for classification. INCOME means
+  // money received, regardless of the sign returned by a particular institution.
+  // Transfers are kept as their own category so the finance UI can exclude them
+  // from income/expenses while still showing their total separately.
+  const isIncome = primary === "INCOME";
+  const isTransfer = primary === "TRANSFER_IN" || primary === "TRANSFER_OUT" || primary.startsWith("TRANSFER_");
+
   return {
-    amount: Math.abs(amount),
+    amount: Math.abs(rawAmount),
     type: isIncome ? "income" : "expense",
     category: isIncome ? "Ingresos" : (primary || transaction.category?.[0] || "Otros"),
     personalFinanceCategory: primary || null,
+    isTransfer,
   };
 }
 
