@@ -20,24 +20,39 @@ function isAllowedOrigin(request: Request) {
   try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
 }
 
+function isTransfer(data: any) {
+  if (data?.source !== "plaid") return false;
+  const category = String(data?.personalFinanceCategory || data?.category || "").toUpperCase();
+  return category === "TRANSFER_IN" || category === "TRANSFER_OUT" || category.startsWith("TRANSFER_");
+}
+
+function isActualIncome(data: any) {
+  if (isTransfer(data)) return false;
+  if (data?.source !== "plaid") return data?.type === "income";
+  const category = String(data?.personalFinanceCategory || "").toUpperCase();
+  return category ? category === "INCOME" : data?.type === "income";
+}
+
 async function financialContext(userId: string) {
   const snapshot = await adminDb().collection("users").doc(userId).collection("transactions").limit(300).get();
-  const transactions = snapshot.docs.map((doc) => {
-    const data = doc.data();
-    return {
-      description: String(data.description || ""),
-      amount: Number(data.amount || 0),
-      type: data.type === "income" ? "income" : "expense",
-      category: String(data.category || "Otros"),
-      date: String(data.date || ""),
-      source: data.source === "plaid" ? "bank" : "manual",
-    };
-  });
-  const income = transactions.filter(t => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
-  const expenses = transactions.filter(t => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+  const rawTransactions = snapshot.docs.map((doc) => doc.data());
+  const transactions = rawTransactions.map((data) => ({
+    description: String(data.description || ""),
+    amount: Number(data.amount || 0),
+    type: data.type === "income" ? "income" : "expense",
+    category: String(data.category || "Otros"),
+    date: String(data.date || ""),
+    source: data.source === "plaid" ? "bank" : "manual",
+  }));
+  const realTransactions = rawTransactions.filter((data) => !isTransfer(data));
+  const income = realTransactions.filter(isActualIncome).reduce((sum, t) => sum + Math.abs(Number(t.amount || 0)), 0);
+  const expenses = realTransactions.filter(t => t?.type === "expense").reduce((sum, t) => sum + Math.abs(Number(t.amount || 0)), 0);
   const byCategory: Record<string, number> = {};
-  for (const t of transactions.filter(t => t.type === "expense")) byCategory[t.category] = (byCategory[t.category] || 0) + t.amount;
-  return { income, expenses, balance: income - expenses, byCategory, transactionCount: transactions.length, transactions: transactions.slice(-100) };
+  for (const t of realTransactions.filter(t => t?.type === "expense")) {
+    const category = String(t.category || "Otros");
+    byCategory[category] = (byCategory[category] || 0) + Math.abs(Number(t.amount || 0));
+  }
+  return { income, expenses, balance: income - expenses, byCategory, transactionCount: realTransactions.length, transactions: transactions.filter((_, i) => !isTransfer(rawTransactions[i])).slice(-100) };
 }
 
 export async function POST(request: Request) {
@@ -71,7 +86,7 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${openAIKey}` },
       body: JSON.stringify({
         model,
-        instructions: "Eres LifeBoost AI, un asistente financiero personal. Responde en español de forma clara, práctica y responsable. Usa los datos financieros autorizados del usuario para detectar patrones, explicar ahorro y presupuesto y proponer acciones realistas. No prometas ganancias rápidas ni rendimientos garantizados, no inventes datos y aclara cuando falte información. Para inversiones, ofrece información educativa y señala riesgos. Los movimientos pueden venir de un banco sincronizado o de entrada manual.",
+        instructions: "Eres LifeBoost AI, un asistente financiero personal. Responde en español de forma clara, práctica y responsable. Usa los datos financieros autorizados del usuario para detectar patrones, explicar ahorro y presupuesto y proponer acciones realistas. No prometas ganancias rápidas ni rendimientos garantizados, no inventes datos y aclara cuando falte información. Para inversiones, ofrece información educativa y señala riesgos. Los movimientos pueden venir de un banco sincronizado o de entrada manual. Las transferencias entre cuentas no son ingresos ni gastos reales y deben ignorarse en los cálculos.",
         input: `Datos financieros actuales del usuario (privados):\n${JSON.stringify(finances)}\n\nPregunta del usuario:\n${message}`,
       }),
       cache: "no-store",
