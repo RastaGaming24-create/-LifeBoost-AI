@@ -36,7 +36,7 @@ function isCurrentWeek(date: string) {
   end.setHours(23, 59, 59, 999);
   return value >= start && value <= end;
 }
-function isTransfer(transaction: Transaction) {
+export function isTransfer(transaction: Transaction) {
   if (transaction.source !== "plaid") return false;
   const category = String(transaction.personalFinanceCategory || transaction.category || "").toUpperCase();
   return category === "TRANSFER_IN" || category === "TRANSFER_OUT" || category.startsWith("TRANSFER_");
@@ -50,10 +50,12 @@ function isActualIncome(transaction: Transaction) {
 export function calculateTotals(transactions: Transaction[]) {
   const incomeTransactions = transactions.filter(isActualIncome);
   const expenseTransactions = transactions.filter((t) => t.type === "expense" && !isTransfer(t));
+  const transferTransactions = transactions.filter(isTransfer);
   const weeklyIncome = incomeTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthIncome = incomeTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const weeklyExpenses = expenseTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthExpenses = expenseTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
+  const currentMonthTransfers = transferTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const monthlyBalance = currentMonthIncome - currentMonthExpenses;
   const expenseRate = currentMonthIncome > 0 ? (currentMonthExpenses / currentMonthIncome) * 100 : 0;
   const recurringWeekly = incomeTransactions.filter((t) => t.frequency === "weekly").reduce((sum, t) => sum + t.amount, 0);
@@ -76,5 +78,6 @@ export function calculateTotals(transactions: Transaction[]) {
     weeklyExpenses,
     currentMonthIncome,
     currentMonthExpenses,
+    currentMonthTransfers,
   };
 }
