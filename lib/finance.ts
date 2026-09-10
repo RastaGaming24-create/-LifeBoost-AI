@@ -37,19 +37,21 @@ function isCurrentWeek(date: string) {
   return value >= start && value <= end;
 }
 export function isTransfer(transaction: Transaction) {
-  if (transaction.source !== "plaid") return false;
   const category = String(transaction.personalFinanceCategory || transaction.category || "").toUpperCase();
   return category === "TRANSFER_IN" || category === "TRANSFER_OUT" || category.startsWith("TRANSFER_");
 }
 function isActualIncome(transaction: Transaction) {
   if (isTransfer(transaction)) return false;
+  const category = String(transaction.personalFinanceCategory || transaction.category || "").toUpperCase();
+  // If Plaid already classified the movement as INCOME, trust that classification
+  // even when an older stored transaction still has type="expense".
+  if (category === "INCOME") return true;
   if (transaction.source !== "plaid") return transaction.type === "income";
-  if (transaction.personalFinanceCategory) return transaction.personalFinanceCategory === "INCOME";
   return transaction.type === "income";
 }
 export function calculateTotals(transactions: Transaction[]) {
   const incomeTransactions = transactions.filter(isActualIncome);
-  const expenseTransactions = transactions.filter((t) => t.type === "expense" && !isTransfer(t));
+  const expenseTransactions = transactions.filter((t) => t.type === "expense" && !isTransfer(t) && !isActualIncome(t));
   const transferTransactions = transactions.filter(isTransfer);
   const weeklyIncome = incomeTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthIncome = incomeTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
