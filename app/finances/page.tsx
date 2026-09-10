@@ -10,6 +10,14 @@ import { calculateTotals, isTransfer, Transaction, TransactionFrequency, Transac
 import { auth, db } from "../../lib/firebase";
 
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
+const quickOptions = [
+  { label: "Salario", description: "Salario", type: "income" as TransactionType, category: "Ingresos", frequency: "monthly" as TransactionFrequency },
+  { label: "Renta", description: "Renta", type: "expense" as TransactionType, category: "Vivienda", frequency: "monthly" as TransactionFrequency },
+  { label: "Comida", description: "Comida", type: "expense" as TransactionType, category: "Comida", frequency: "once" as TransactionFrequency },
+  { label: "Transporte", description: "Transporte", type: "expense" as TransactionType, category: "Transporte", frequency: "once" as TransactionFrequency },
+  { label: "Deuda", description: "Pago de deuda", type: "expense" as TransactionType, category: "Deudas", frequency: "monthly" as TransactionFrequency },
+  { label: "Ahorro", description: "Ahorro", type: "expense" as TransactionType, category: "Ahorro", frequency: "monthly" as TransactionFrequency },
+];
 const FIRESTORE_BASE = "https://firestore.googleapis.com/v1/projects/life-boost-ai/databases/(default)/documents";
 const FIREBASE_API_KEY = "AIzaSyCFvsz5ZKHirQ8fC8gvPxf2E_f-tDGWuKg";
 
@@ -104,6 +112,9 @@ export default function FinancesPage() {
   const [syncState, setSyncState] = useState<SyncState>("idle");
   const [syncError, setSyncError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [movementOpen, setMovementOpen] = useState(false);
+  const [entryMode, setEntryMode] = useState<"options" | "manual">("options");
+  const [openSection, setOpenSection] = useState<"income" | "expense" | "transfer" | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -112,19 +123,16 @@ export default function FinancesPage() {
       setSyncError("");
       return;
     }
-
     let active = true;
     setSyncState("syncing");
     setSyncError("");
-
     const transactionsRef = collection(db, "users", user.uid, "transactions");
     const unsubscribe = onSnapshot(
       transactionsRef,
       { includeMetadataChanges: true },
       (snap) => {
         if (!active) return;
-        const nextTransactions = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Transaction));
-        setTransactions(nextTransactions);
+        setTransactions(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Transaction)));
         if (!snap.metadata.fromCache && !snap.metadata.hasPendingWrites) {
           setSyncState("synced");
           setSyncError("");
@@ -138,7 +146,6 @@ export default function FinancesPage() {
         }
       },
     );
-
     restRequest(`users/${encodeURIComponent(user.uid)}/transactions?pageSize=100`)
       .then((data) => {
         if (!active) return;
@@ -149,12 +156,11 @@ export default function FinancesPage() {
       })
       .catch((error) => {
         console.error("LifeBoost AI Firestore REST read error:", error);
-        if (active && transactions.length === 0) {
+        if (active) {
           setSyncState("error");
           setSyncError(`No se pudieron cargar los datos desde Firebase. ${getFirebaseErrorMessage(error)}`);
         }
       });
-
     return () => {
       active = false;
       unsubscribe();
@@ -170,11 +176,9 @@ export default function FinancesPage() {
     event.preventDefault();
     const value = Number(amount);
     if (!user || !description.trim() || !Number.isFinite(value) || value <= 0 || saving) return;
-
     setSaving(true);
     setSyncState("syncing");
     setSyncError("");
-
     const newTransaction: Omit<Transaction, "id"> = {
       description: description.trim(),
       amount: value,
@@ -182,8 +186,8 @@ export default function FinancesPage() {
       category: type === "income" ? "Ingresos" : category,
       date: new Date().toISOString(),
       frequency,
+      source: "manual",
     };
-
     try {
       const fields: Record<string, ReturnType<typeof firestoreValue>> = {
         description: firestoreValue(newTransaction.description),
@@ -192,13 +196,12 @@ export default function FinancesPage() {
         category: firestoreValue(newTransaction.category),
         date: firestoreValue(newTransaction.date),
         frequency: firestoreValue(frequency),
+        source: firestoreValue("manual"),
       };
-
       const data = await restRequest(`users/${encodeURIComponent(user.uid)}/transactions`, {
         method: "POST",
         body: JSON.stringify({ fields }),
       });
-
       const saved = fromFirestoreDocument(data);
       setTransactions((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setDescription("");
@@ -206,6 +209,7 @@ export default function FinancesPage() {
       setFrequency("once");
       setSyncState("synced");
       setSyncError("");
+      setMovementOpen(false);
     } catch (error) {
       console.error("LifeBoost AI Firestore REST write error:", error);
       setSyncState("error");
@@ -235,24 +239,33 @@ export default function FinancesPage() {
     setFrequency("once");
   }
 
+  function chooseQuickOption(option: typeof quickOptions[number]) {
+    setDescription(option.description);
+    setType(option.type);
+    setCategory(option.category === "Ingresos" ? "Otros" : option.category);
+    setFrequency(option.frequency);
+    setEntryMode("manual");
+  }
+
   return (
     <AuthGuard>
       <main className="min-h-screen bg-slate-950 text-white">
         <Navbar />
-        <div className="mx-auto max-w-6xl px-6 py-10 lg:px-8">
-          <p className="text-sm font-medium text-blue-400">Control financiero</p>
-          <h1 className="mt-2 text-4xl font-bold">Finanzas</h1>
-          <p className="mt-3 max-w-2xl text-slate-400">Tus movimientos se guardan de forma privada en tu cuenta de LifeBoost AI.</p>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-            <span className={syncState === "synced" ? "rounded-full bg-emerald-500/10 px-3 py-1 text-emerald-400" : syncState === "error" ? "rounded-full bg-red-500/10 px-3 py-1 text-red-400" : "rounded-full bg-blue-500/10 px-3 py-1 text-blue-400"}>
-              {syncState === "synced" ? "✓ Sincronizado con Firebase" : syncState === "error" ? "⚠ Error de sincronización" : "⟳ Sincronizando..."}
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+          <p className="text-xs font-medium uppercase tracking-wide text-blue-400">Control financiero</p>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-bold">Finanzas</h1>
+              <p className="mt-1 text-sm text-slate-400">Tus movimientos se guardan de forma privada.</p>
+            </div>
+            <span className={syncState === "synced" ? "rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-400" : syncState === "error" ? "rounded-full bg-red-500/10 px-3 py-1 text-xs text-red-400" : "rounded-full bg-blue-500/10 px-3 py-1 text-xs text-blue-400"}>
+              {syncState === "synced" ? "✓ Firebase" : syncState === "error" ? "⚠ Error" : "⟳ Sincronizando"}
             </span>
           </div>
 
-          {syncError && <div className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">{syncError}</div>}
+          {syncError && <div className="mt-3 rounded-xl border border-red-900/60 bg-red-950/30 p-3 text-xs text-red-300">{syncError}</div>}
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Summary label="Ingresos" value={totals.income} tone="income" />
             <Summary label="Gastos" value={totals.totalExpenses} tone="expense" />
             <Summary label="Ingreso semanal" value={totals.weeklyIncome} tone="income" />
@@ -260,134 +273,70 @@ export default function FinancesPage() {
             <Summary label="Balance" value={totals.income - totals.totalExpenses} tone="balance" />
           </div>
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-[360px_1fr]">
-            <form onSubmit={addTransaction} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-              <h2 className="text-xl font-semibold">Nuevo movimiento</h2>
+          <section className="mt-4 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
+            <button type="button" onClick={() => setMovementOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left">
+              <span className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-xl">+</span><span><span className="block font-semibold">Nuevo movimiento</span><span className="block text-xs text-slate-500">Elige una opción o introdúcelo manualmente</span></span></span>
+              <span className="text-xl text-slate-300">{movementOpen ? "⌃" : "⌄"}</span>
+            </button>
 
-              <label className="mt-5 block text-sm text-slate-400">
-                Descripción
-                <input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder={type === "income" ? "Ej. Salario" : "Ej. Renta"} />
-              </label>
+            {movementOpen && (
+              <form onSubmit={addTransaction} className="border-t border-slate-800 px-4 pb-4 pt-3">
+                <div className="grid grid-cols-2 rounded-xl border border-slate-700 bg-slate-950 p-1">
+                  <button type="button" onClick={() => setEntryMode("options")} className={`rounded-lg px-3 py-2 text-sm font-semibold ${entryMode === "options" ? "bg-blue-600 text-white" : "text-slate-400"}`}>Elegir opción</button>
+                  <button type="button" onClick={() => setEntryMode("manual")} className={`rounded-lg px-3 py-2 text-sm font-semibold ${entryMode === "manual" ? "bg-blue-600 text-white" : "text-slate-400"}`}>Entrada manual</button>
+                </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <label className="block text-sm text-slate-400">
-                  Monto
-                  <input required type="number" min="0.01" max="100000000" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" placeholder="0.00" />
-                </label>
+                {entryMode === "options" ? (
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {quickOptions.map((option) => (
+                      <button key={option.label} type="button" onClick={() => chooseQuickOption(option)} className="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-left hover:border-blue-500">
+                        <span><span className="block text-sm font-medium">{option.label}</span><span className="block text-xs text-slate-500">{option.type === "income" ? "Ingreso" : option.category}</span></span><span className="text-slate-400">›</span>
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => setEntryMode("manual")} className="flex items-center justify-between rounded-xl border border-dashed border-slate-600 px-3 py-3 text-left text-sm text-slate-300 hover:border-blue-500"><span>✎ Escribir manualmente</span><span>›</span></button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <label className="text-xs text-slate-400">Tipo<select value={type} onChange={(e) => handleTypeChange(e.target.value as TransactionType)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white"><option value="expense">Gasto</option><option value="income">Ingreso</option></select></label>
+                      <label className="text-xs text-slate-400">Monto<input required type="number" min="0.01" max="100000000" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white" placeholder="0.00" /></label>
+                    </div>
+                    <label className="mt-3 block text-xs text-slate-400">Descripción<input required maxLength={120} value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white" placeholder={type === "income" ? "Ej. Salario" : "Ej. Renta"} /></label>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <label className="text-xs text-slate-400">Categoría<select value={type === "income" ? "Ingresos" : category} disabled={type === "income"} onChange={(e) => setCategory(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white disabled:opacity-60">{type === "income" ? <option>Ingresos</option> : categories.map((item) => <option key={item}>{item}</option>)}</select></label>
+                      <label className="text-xs text-slate-400">Frecuencia<select value={frequency} onChange={(e) => setFrequency(e.target.value as TransactionFrequency)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white"><option value="once">Una sola vez</option><option value="weekly">Semanal</option><option value="monthly">Mensual</option></select></label>
+                    </div>
+                    <button disabled={saving} type="submit" className="mt-3 w-full rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold hover:bg-blue-500 disabled:opacity-60">{saving ? "Guardando…" : "Agregar movimiento"}</button>
+                  </>
+                )}
+              </form>
+            )}
+          </section>
 
-                <label className="block text-sm text-slate-400">
-                  Frecuencia
-                  <select value={frequency} onChange={(e) => setFrequency(e.target.value as TransactionFrequency)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
-                    <option value="once">Una sola vez</option>
-                    <option value="weekly">Semanal</option>
-                    <option value="monthly">Mensual</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <label className="text-sm text-slate-400">
-                  Tipo
-                  <select value={type} onChange={(e) => handleTypeChange(e.target.value as TransactionType)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white">
-                    <option value="expense">Gasto</option>
-                    <option value="income">Ingreso</option>
-                  </select>
-                </label>
-
-                <label className="text-sm text-slate-400">
-                  Categoría
-                  <select value={type === "income" ? "Ingresos" : category} disabled={type === "income"} onChange={(e) => setCategory(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white disabled:opacity-60">
-                    {type === "income" ? <option>Ingresos</option> : categories.map((item) => <option key={item}>{item}</option>)}
-                  </select>
-                </label>
-              </div>
-
-              <p className="mt-3 text-xs text-slate-500">
-                {type === "expense"
-                  ? "Los gastos se guardan únicamente como gastos y se muestran en su propia sección."
-                  : "Los ingresos se guardan únicamente como ingresos y se muestran en su propia sección."}
-              </p>
-
-              <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
-                {saving ? "Guardando en Firebase…" : "Agregar movimiento"}
-              </button>
-            </form>
-
-            <div className="space-y-6">
-              <TransactionSection title="Ingresos" subtitle="Dinero que entra a tu cuenta" transactions={incomeTransactions} type="income" onRemove={removeTransaction} />
-              <TransactionSection title="Gastos" subtitle="Dinero que sale de tu cuenta" transactions={expenseTransactions} type="expense" onRemove={removeTransaction} />
-              <TransferSection transactions={transferTransactions} onRemove={removeTransaction} />
-            </div>
+          <div className="mt-4 space-y-2">
+            <CompactSection title="Ingresos" subtitle="Dinero que entra a tu cuenta" count={incomeTransactions.length} tone="income" open={openSection === "income"} onToggle={() => setOpenSection(openSection === "income" ? null : "income")} transactions={incomeTransactions} type="income" onRemove={removeTransaction} />
+            <CompactSection title="Gastos" subtitle="Dinero que sale de tu cuenta" count={expenseTransactions.length} tone="expense" open={openSection === "expense"} onToggle={() => setOpenSection(openSection === "expense" ? null : "expense")} transactions={expenseTransactions} type="expense" onRemove={removeTransaction} />
+            <CompactSection title="Transferencias" subtitle="No se cuentan como ingresos ni gastos" count={transferTransactions.length} tone="transfer" open={openSection === "transfer"} onToggle={() => setOpenSection(openSection === "transfer" ? null : "transfer")} transactions={transferTransactions} type="transfer" onRemove={removeTransaction} />
           </div>
 
-          <Link href="/dashboard" className="mt-8 inline-block rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold">Volver al Dashboard</Link>
+          <Link href="/dashboard" className="mt-5 inline-flex items-center gap-2 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold">← Volver al Dashboard</Link>
         </div>
       </main>
     </AuthGuard>
   );
 }
 
-function TransactionSection({ title, subtitle, transactions, type, onRemove }: { title: string; subtitle: string; transactions: Transaction[]; type: TransactionType; onRemove: (id: string) => void }) {
-  const isIncome = type === "income";
+function CompactSection({ title, subtitle, count, tone, open, onToggle, transactions, type, onRemove }: { title: string; subtitle: string; count: number; tone: "income" | "expense" | "transfer"; open: boolean; onToggle: () => void; transactions: Transaction[]; type: "income" | "expense" | "transfer"; onRemove: (id: string) => void }) {
+  const badge = tone === "income" ? "bg-emerald-500/10 text-emerald-400" : tone === "expense" ? "bg-red-500/10 text-red-400" : "bg-blue-500/10 text-blue-400";
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold">{title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-        </div>
-        <span className={isIncome ? "rounded-full bg-emerald-500/10 px-3 py-1 text-sm text-emerald-400" : "rounded-full bg-red-500/10 px-3 py-1 text-sm text-red-400"}>
-          {transactions.length} {transactions.length === 1 ? "movimiento" : "movimientos"}
-        </span>
-      </div>
-
-      {transactions.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">No hay {isIncome ? "ingresos" : "gastos"} registrados.</p>
-      ) : (
-        <div className="mt-5 space-y-3">
-          {transactions.map((t) => (
-            <div key={t.id} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{t.description}</p>
-                <p className="text-sm text-slate-500">
-                  {t.category} · {new Date(t.date).toLocaleDateString()}
-                  {t.frequency && t.frequency !== "once" ? ` · ${t.frequency === "weekly" ? "Semanal" : "Mensual"}` : ""}
-                </p>
-              </div>
-              <p className={isIncome ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>{isIncome ? "+" : "-"}${t.amount.toFixed(2)}</p>
-              <button type="button" onClick={() => onRemove(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function TransferSection({ transactions, onRemove }: { transactions: Transaction[]; onRemove: (id: string) => void }) {
-  return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-semibold">Transferencias</h2>
-          <p className="mt-1 text-sm text-slate-500">Movimientos entre cuentas detectados por tu banco. No se cuentan como ingresos ni gastos.</p>
-        </div>
-        <span className="rounded-full bg-blue-500/10 px-3 py-1 text-sm text-blue-400">{transactions.length} {transactions.length === 1 ? "transferencia" : "transferencias"}</span>
-      </div>
-      {transactions.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">No hay transferencias registradas.</p>
-      ) : (
-        <div className="mt-5 space-y-3">
-          {transactions.map((t) => (
-            <div key={t.id} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{t.description}</p>
-                <p className="text-sm text-slate-500">{t.category} · {new Date(t.date).toLocaleDateString()}</p>
-              </div>
-              <p className="font-semibold text-blue-400">${t.amount.toFixed(2)}</p>
-              <button type="button" onClick={() => onRemove(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
-            </div>
-          ))}
+    <section className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
+      <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left hover:bg-slate-800/40">
+        <span className="min-w-0"><span className="block font-semibold">{title}</span><span className="block truncate text-xs text-slate-500">{subtitle}</span></span>
+        <span className="flex shrink-0 items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs ${badge}`}>{count}</span><span className="text-xl text-slate-300">{open ? "⌃" : "›"}</span></span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-800 p-3">
+          {transactions.length === 0 ? <p className="rounded-xl border border-dashed border-slate-700 p-5 text-center text-xs text-slate-500">No hay movimientos registrados.</p> : <div className="space-y-2">{transactions.map((t) => <div key={t.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{t.description}</p><p className="text-xs text-slate-500">{t.category} · {new Date(t.date).toLocaleDateString()}</p></div><p className={`text-sm font-semibold ${type === "income" ? "text-emerald-400" : type === "expense" ? "text-red-400" : "text-blue-400"}`}>{type === "income" ? "+" : type === "expense" ? "-" : ""}${t.amount.toFixed(2)}</p><button type="button" onClick={() => onRemove(t.id)} className="text-xs text-slate-500 hover:text-red-400">Eliminar</button></div>)}</div>}
         </div>
       )}
     </section>
@@ -396,5 +345,5 @@ function TransferSection({ transactions, onRemove }: { transactions: Transaction
 
 function Summary({ label, value, tone }: { label: string; value: number; tone: "income" | "expense" | "balance" | "transfer" }) {
   const valueClass = tone === "income" ? "text-emerald-400" : tone === "expense" ? "text-red-400" : tone === "transfer" ? "text-blue-400" : value >= 0 ? "text-emerald-400" : "text-red-400";
-  return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><p className="text-sm text-slate-400">{label}</p><p className={`mt-2 text-2xl font-bold ${valueClass}`}>${value.toFixed(2)}</p></div>;
+  return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"><p className="truncate text-xs text-slate-400">{label}</p><p className={`mt-1 text-xl font-bold ${valueClass}`}>${value.toFixed(2)}</p></div>;
 }
