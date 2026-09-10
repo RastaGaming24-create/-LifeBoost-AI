@@ -45,7 +45,9 @@ function isCurrentWeek(date: string) {
 }
 
 export function calculateTotals(transactions: Transaction[]) {
-  const income = transactions.filter((t) => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+  // Income shown in the main summary is only the income recorded during the current month.
+  // Historical income remains in the transaction list but is not added to this total.
+  const currentMonthIncome = transactions.filter((t) => t.type === "income" && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const totalExpenses = transactions.filter((t) => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
 
   const recurringWeekly = transactions.filter((t) => t.type === "income" && t.frequency === "weekly").reduce((sum, t) => sum + t.amount, 0)
@@ -59,21 +61,20 @@ export function calculateTotals(transactions: Transaction[]) {
 
   const currentMonthOneTimeExpenses = transactions.filter((t) => t.type === "expense" && (!t.frequency || t.frequency === "once") && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const monthlyExpenses = monthlyRecurringExpenses + currentMonthOneTimeExpenses;
-  const monthlyBalance = recurringMonthly - monthlyExpenses;
-  const expenseRate = recurringMonthly > 0 ? (monthlyExpenses / recurringMonthly) * 100 : 0;
+  const monthlyBalance = currentMonthIncome - monthlyExpenses;
+  const expenseRate = currentMonthIncome > 0 ? (monthlyExpenses / currentMonthIncome) * 100 : 0;
 
   // Real bank/manual transaction totals for the current calendar periods.
   const weeklyIncome = transactions.filter((t) => t.type === "income" && isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
-  const currentMonthIncome = transactions.filter((t) => t.type === "income" && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const weeklyExpenses = transactions.filter((t) => t.type === "expense" && isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthExpenses = transactions.filter((t) => t.type === "expense" && isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
 
   return {
-    income,
+    income: currentMonthIncome,
     expenses: monthlyExpenses,
     totalExpenses,
     balance: monthlyBalance,
-    monthlyIncome: currentMonthIncome || recurringMonthly,
+    monthlyIncome: currentMonthIncome,
     monthlyExpenses: currentMonthExpenses || monthlyExpenses,
     monthlyBalance,
     expenseRate,
