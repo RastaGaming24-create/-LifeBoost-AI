@@ -7,9 +7,7 @@
   --foreground: #f8fafc;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html {
   scroll-behavior: smooth;
@@ -21,54 +19,28 @@ body {
   min-width: 320px;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
 }
 
-input,
-select,
-textarea,
-button {
-  font: inherit;
-}
+input, select, textarea, button { font: inherit; }
+input, select, textarea { max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button, a { -webkit-tap-highlight-color: transparent; }
 
-input,
-select,
-textarea {
-  max-width: 100%;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button,
-a {
-  -webkit-tap-highlight-color: transparent;
-}
+::selection { background: rgba(37, 99, 235, 0.35); color: #fff; }
 
 @media (max-width: 639px) {
   nav > div {
-    min-height: 58px;
-    gap: 8px;
+    min-height: 64px;
+    gap: 10px;
     padding-left: 12px;
     padding-right: 12px;
   }
 
-  nav > div > div {
-    gap: 0;
-    padding-bottom: 0;
-  }
-
-  nav a,
-  nav button {
-    padding-left: 9px !important;
-    padding-right: 9px !important;
-    font-size: 13px !important;
-  }
+  nav > div > div { padding-bottom: 0; }
 
   main .max-w-6xl {
     padding-left: 14px;
@@ -77,55 +49,13 @@ a {
     padding-bottom: 32px;
   }
 
-  main .max-w-6xl h1 {
-    font-size: 2rem;
-    line-height: 1.15;
-  }
+  main .max-w-6xl h1 { font-size: 2rem; line-height: 1.15; }
 
   main .max-w-6xl .grid-cols-2,
-  main .max-w-6xl form .grid-cols-2 {
-    grid-template-columns: minmax(0, 1fr) !important;
-  }
+  main .max-w-6xl form .grid-cols-2 { grid-template-columns: minmax(0, 1fr) !important; }
 
-  main .max-w-6xl form {
-    padding: 16px;
-  }
+  main .max-w-6xl form { padding: 16px; }
+  main .max-w-6xl section { padding: 16px; }
 
-  main .max-w-6xl section {
-    padding: 16px;
-  }
-
-  main .max-w-6xl section > div:first-child {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  main .max-w-6xl section > div:first-child > span {
-    align-self: flex-start;
-  }
-
-  main .max-w-6xl section .mt-5 > div {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  main .max-w-6xl section .mt-5 > div > div {
-    flex-basis: calc(100% - 8px);
-  }
-
-  main .max-w-6xl section .mt-5 > div > p {
-    margin-left: auto;
-  }
-
-  main .max-w-6xl section .mt-5 > div > button {
-    margin-left: auto;
-  }
-
-  input,
-  select,
-  textarea,
-  button {
-    min-height: 44px;
-  }
+  input, select, textarea, button { min-height: 44px; }
 }
