@@ -58,21 +58,16 @@ function isActualIncome(transaction: Transaction) {
 
 export function calculateTotals(transactions: Transaction[]) {
   const incomeTransactions = transactions.filter(isActualIncome);
-  // Transfers are movements of existing money, not expenses.
   const expenseTransactions = transactions.filter((t) => t.type === "expense" && !isTransfer(t));
 
-  // Real cash-flow totals are strictly period-based. Recurring frequency is metadata
-  // for planning and must never duplicate historical/current transactions.
   const weeklyIncome = incomeTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthIncome = incomeTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const weeklyExpenses = expenseTransactions.filter((t) => isCurrentWeek(t.date)).reduce((sum, t) => sum + t.amount, 0);
   const currentMonthExpenses = expenseTransactions.filter((t) => isCurrentMonth(t.date)).reduce((sum, t) => sum + t.amount, 0);
-  const totalExpenses = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
 
   const monthlyBalance = currentMonthIncome - currentMonthExpenses;
   const expenseRate = currentMonthIncome > 0 ? (currentMonthExpenses / currentMonthIncome) * 100 : 0;
 
-  // Projections remain separate from real cash-flow totals.
   const recurringWeekly = incomeTransactions.filter((t) => t.frequency === "weekly").reduce((sum, t) => sum + t.amount, 0);
   const recurringMonthly = incomeTransactions.filter((t) => t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0);
   const projectedMonthlyExpenses = expenseTransactions.filter((t) => t.frequency === "monthly").reduce((sum, t) => sum + t.amount, 0)
@@ -81,7 +76,7 @@ export function calculateTotals(transactions: Transaction[]) {
   return {
     income: currentMonthIncome,
     expenses: currentMonthExpenses,
-    totalExpenses,
+    totalExpenses: currentMonthExpenses,
     balance: monthlyBalance,
     monthlyIncome: currentMonthIncome,
     monthlyExpenses: currentMonthExpenses,
