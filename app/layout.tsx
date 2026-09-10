@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "../components/AuthProvider";
 
@@ -7,6 +7,12 @@ export const metadata: Metadata = {
   description: "LifeBoost AI: plataforma inteligente para organizar finanzas, metas y progreso.",
   applicationName: "LifeBoost AI",
   robots: { index: true, follow: true },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
