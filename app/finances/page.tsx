@@ -6,7 +6,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
-import { calculateTotals, ExpenseFrequency, IncomeFrequency, Transaction, TransactionFrequency, TransactionType } from "../../lib/finance";
+import { calculateTotals, Transaction, TransactionFrequency, TransactionType } from "../../lib/finance";
 import { auth, db } from "../../lib/firebase";
 
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
@@ -162,6 +162,8 @@ export default function FinancesPage() {
   }, [user]);
 
   const totals = useMemo(() => calculateTotals(transactions), [transactions]);
+  const incomeTransactions = useMemo(() => transactions.filter((t) => t.type === "income"), [transactions]);
+  const expenseTransactions = useMemo(() => transactions.filter((t) => t.type === "expense"), [transactions]);
 
   async function addTransaction(event: FormEvent) {
     event.preventDefault();
@@ -249,12 +251,11 @@ export default function FinancesPage() {
 
           {syncError && <div className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">{syncError}</div>}
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <Summary label="Ingresos registrados" value={totals.income} />
-            <Summary label="Ingreso semanal" value={totals.recurringWeekly} />
-            <Summary label="Ingreso mensual" value={totals.recurringMonthly} />
-            <Summary label="Gastos" value={totals.expenses} />
-            <Summary label="Balance" value={totals.balance} />
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Summary label="Ingresos" value={totals.income} tone="income" />
+            <Summary label="Gastos" value={totals.totalExpenses} tone="expense" />
+            <Summary label="Ingreso semanal" value={totals.weeklyIncome} tone="income" />
+            <Summary label="Balance" value={totals.income - totals.totalExpenses} tone="balance" />
           </div>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-[360px_1fr]">
@@ -301,8 +302,8 @@ export default function FinancesPage() {
 
               <p className="mt-3 text-xs text-slate-500">
                 {type === "expense"
-                  ? "Indica si este gasto ocurre semanalmente, mensualmente o una sola vez."
-                  : "Indica si este ingreso ocurre semanalmente, mensualmente o una sola vez."}
+                  ? "Los gastos se guardan únicamente como gastos y se muestran en su propia sección."
+                  : "Los ingresos se guardan únicamente como ingresos y se muestran en su propia sección."}
               </p>
 
               <button disabled={saving} type="submit" className="mt-6 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
@@ -310,30 +311,10 @@ export default function FinancesPage() {
               </button>
             </form>
 
-            <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-              <h2 className="text-xl font-semibold">Movimientos recientes</h2>
-              {transactions.length === 0 ? (
-                <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                  {syncState === "error" ? "No se pudieron cargar los movimientos." : "Todavía no tienes movimientos."}
-                </p>
-              ) : (
-                <div className="mt-5 space-y-3">
-                  {transactions.map((t) => (
-                    <div key={t.id} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{t.description}</p>
-                        <p className="text-sm text-slate-500">
-                          {t.category} · {new Date(t.date).toLocaleDateString()}
-                          {t.frequency && t.frequency !== "once" ? ` · ${t.frequency === "weekly" ? "Semanal" : "Mensual"}` : ""}
-                        </p>
-                      </div>
-                      <p className={t.type === "income" ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>{t.type === "income" ? "+" : "-"}${t.amount.toFixed(2)}</p>
-                      <button type="button" onClick={() => removeTransaction(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            <div className="space-y-6">
+              <TransactionSection title="Ingresos" subtitle="Dinero que entra a tu cuenta" transactions={incomeTransactions} type="income" onRemove={removeTransaction} />
+              <TransactionSection title="Gastos" subtitle="Dinero que sale de tu cuenta" transactions={expenseTransactions} type="expense" onRemove={removeTransaction} />
+            </div>
           </div>
 
           <Link href="/dashboard" className="mt-8 inline-block rounded-xl border border-slate-700 px-5 py-3 text-sm font-semibold">Volver al Dashboard</Link>
@@ -343,6 +324,44 @@ export default function FinancesPage() {
   );
 }
 
-function Summary({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><p className="text-sm text-slate-400">{label}</p><p className="mt-2 text-2xl font-bold">${value.toFixed(2)}</p></div>;
+function TransactionSection({ title, subtitle, transactions, type, onRemove }: { title: string; subtitle: string; transactions: Transaction[]; type: TransactionType; onRemove: (id: string) => void }) {
+  const isIncome = type === "income";
+  return (
+    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">{title}</h2>
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        </div>
+        <span className={isIncome ? "rounded-full bg-emerald-500/10 px-3 py-1 text-sm text-emerald-400" : "rounded-full bg-red-500/10 px-3 py-1 text-sm text-red-400"}>
+          {transactions.length} {transactions.length === 1 ? "movimiento" : "movimientos"}
+        </span>
+      </div>
+
+      {transactions.length === 0 ? (
+        <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">No hay {isIncome ? "ingresos" : "gastos"} registrados.</p>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {transactions.map((t) => (
+            <div key={t.id} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{t.description}</p>
+                <p className="text-sm text-slate-500">
+                  {t.category} · {new Date(t.date).toLocaleDateString()}
+                  {t.frequency && t.frequency !== "once" ? ` · ${t.frequency === "weekly" ? "Semanal" : "Mensual"}` : ""}
+                </p>
+              </div>
+              <p className={isIncome ? "font-semibold text-emerald-400" : "font-semibold text-red-400"}>{isIncome ? "+" : "-"}${t.amount.toFixed(2)}</p>
+              <button type="button" onClick={() => onRemove(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Summary({ label, value, tone }: { label: string; value: number; tone: "income" | "expense" | "balance" }) {
+  const valueClass = tone === "income" ? "text-emerald-400" : tone === "expense" ? "text-red-400" : value >= 0 ? "text-emerald-400" : "text-red-400";
+  return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><p className="text-sm text-slate-400">{label}</p><p className={`mt-2 text-2xl font-bold ${valueClass}`}>${value.toFixed(2)}</p></div>;
 }
