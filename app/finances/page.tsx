@@ -6,7 +6,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
-import { calculateTotals, Transaction, TransactionFrequency, TransactionType } from "../../lib/finance";
+import { calculateTotals, isTransfer, Transaction, TransactionFrequency, TransactionType } from "../../lib/finance";
 import { auth, db } from "../../lib/firebase";
 
 const categories = ["Vivienda", "Comida", "Transporte", "Deudas", "Ahorro", "Entretenimiento", "Otros"];
@@ -162,8 +162,9 @@ export default function FinancesPage() {
   }, [user]);
 
   const totals = useMemo(() => calculateTotals(transactions), [transactions]);
-  const incomeTransactions = useMemo(() => transactions.filter((t) => t.type === "income"), [transactions]);
-  const expenseTransactions = useMemo(() => transactions.filter((t) => t.type === "expense"), [transactions]);
+  const incomeTransactions = useMemo(() => transactions.filter((t) => t.type === "income" && !isTransfer(t)), [transactions]);
+  const expenseTransactions = useMemo(() => transactions.filter((t) => t.type === "expense" && !isTransfer(t)), [transactions]);
+  const transferTransactions = useMemo(() => transactions.filter(isTransfer), [transactions]);
 
   async function addTransaction(event: FormEvent) {
     event.preventDefault();
@@ -251,10 +252,11 @@ export default function FinancesPage() {
 
           {syncError && <div className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-4 text-sm text-red-300">{syncError}</div>}
 
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Summary label="Ingresos" value={totals.income} tone="income" />
             <Summary label="Gastos" value={totals.totalExpenses} tone="expense" />
             <Summary label="Ingreso semanal" value={totals.weeklyIncome} tone="income" />
+            <Summary label="Transferencias del mes" value={totals.currentMonthTransfers} tone="transfer" />
             <Summary label="Balance" value={totals.income - totals.totalExpenses} tone="balance" />
           </div>
 
@@ -314,6 +316,7 @@ export default function FinancesPage() {
             <div className="space-y-6">
               <TransactionSection title="Ingresos" subtitle="Dinero que entra a tu cuenta" transactions={incomeTransactions} type="income" onRemove={removeTransaction} />
               <TransactionSection title="Gastos" subtitle="Dinero que sale de tu cuenta" transactions={expenseTransactions} type="expense" onRemove={removeTransaction} />
+              <TransferSection transactions={transferTransactions} onRemove={removeTransaction} />
             </div>
           </div>
 
@@ -361,7 +364,37 @@ function TransactionSection({ title, subtitle, transactions, type, onRemove }: {
   );
 }
 
-function Summary({ label, value, tone }: { label: string; value: number; tone: "income" | "expense" | "balance" }) {
-  const valueClass = tone === "income" ? "text-emerald-400" : tone === "expense" ? "text-red-400" : value >= 0 ? "text-emerald-400" : "text-red-400";
+function TransferSection({ transactions, onRemove }: { transactions: Transaction[]; onRemove: (id: string) => void }) {
+  return (
+    <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold">Transferencias</h2>
+          <p className="mt-1 text-sm text-slate-500">Movimientos entre cuentas detectados por tu banco. No se cuentan como ingresos ni gastos.</p>
+        </div>
+        <span className="rounded-full bg-blue-500/10 px-3 py-1 text-sm text-blue-400">{transactions.length} {transactions.length === 1 ? "transferencia" : "transferencias"}</span>
+      </div>
+      {transactions.length === 0 ? (
+        <p className="mt-6 rounded-xl border border-dashed border-slate-700 p-8 text-center text-slate-400">No hay transferencias registradas.</p>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {transactions.map((t) => (
+            <div key={t.id} className="flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium">{t.description}</p>
+                <p className="text-sm text-slate-500">{t.category} · {new Date(t.date).toLocaleDateString()}</p>
+              </div>
+              <p className="font-semibold text-blue-400">${t.amount.toFixed(2)}</p>
+              <button type="button" onClick={() => onRemove(t.id)} className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:text-red-400">Eliminar</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Summary({ label, value, tone }: { label: string; value: number; tone: "income" | "expense" | "balance" | "transfer" }) {
+  const valueClass = tone === "income" ? "text-emerald-400" : tone === "expense" ? "text-red-400" : tone === "transfer" ? "text-blue-400" : value >= 0 ? "text-emerald-400" : "text-red-400";
   return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><p className="text-sm text-slate-400">{label}</p><p className={`mt-2 text-2xl font-bold ${valueClass}`}>${value.toFixed(2)}</p></div>;
 }
