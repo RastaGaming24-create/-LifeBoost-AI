@@ -101,6 +101,17 @@ async function restRequest(path: string, options: RequestInit = {}) {
   }
 }
 
+function sortTransactionsByDateDesc(items: Transaction[]) {
+  return [...items].sort((a, b) => {
+    const aTime = new Date(a.date).getTime();
+    const bTime = new Date(b.date).getTime();
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+    if (Number.isNaN(aTime)) return 1;
+    if (Number.isNaN(bTime)) return -1;
+    return bTime - aTime;
+  });
+}
+
 export default function FinancesPage() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -168,9 +179,9 @@ export default function FinancesPage() {
   }, [user]);
 
   const totals = useMemo(() => calculateTotals(transactions), [transactions]);
-  const incomeTransactions = useMemo(() => transactions.filter((t) => t.type === "income" && !isTransfer(t)), [transactions]);
-  const expenseTransactions = useMemo(() => transactions.filter((t) => t.type === "expense" && !isTransfer(t)), [transactions]);
-  const transferTransactions = useMemo(() => transactions.filter(isTransfer), [transactions]);
+  const incomeTransactions = useMemo(() => sortTransactionsByDateDesc(transactions.filter((t) => t.type === "income" && !isTransfer(t))), [transactions]);
+  const expenseTransactions = useMemo(() => sortTransactionsByDateDesc(transactions.filter((t) => t.type === "expense" && !isTransfer(t))), [transactions]);
+  const transferTransactions = useMemo(() => sortTransactionsByDateDesc(transactions.filter(isTransfer)), [transactions]);
 
   async function addTransaction(event: FormEvent) {
     event.preventDefault();
