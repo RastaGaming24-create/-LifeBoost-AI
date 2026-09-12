@@ -13,42 +13,60 @@ export type Transaction = {
   source?: "manual" | "plaid";
   personalFinanceCategory?: string;
 };
+
 export const defaultTransactions: Transaction[] = [
   { id: "demo-1", description: "Ingreso mensual", amount: 0, type: "income", category: "Ingresos", frequency: "monthly", date: new Date().toISOString() },
 ];
+
 function validDate(date: string) {
   const value = new Date(date);
   return Number.isFinite(value.getTime()) ? value : null;
 }
-function isCurrentMonth(date: string) {
-  const value = validDate(date);
-  const now = new Date();
-  return Boolean(value && value.getFullYear() === now.getFullYear() && value.getMonth() === now.getMonth());
+
+function localDateKey(date: string | Date) {
+  const value = typeof date === "string" ? validDate(date) : date;
+  if (!value) return null;
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
+
+function isCurrentMonth(date: string) {
+  const key = localDateKey(date);
+  const now = new Date();
+  return Boolean(key && key.startsWith(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-`));
+}
+
 function isCurrentWeek(date: string) {
   const value = validDate(date);
   if (!value) return false;
+
+  // Use the user's local calendar week (Monday through Sunday), not a rolling
+  // seven-day window. This makes "Ingreso semanal" match what users expect.
   const now = new Date();
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
-  start.setDate(start.getDate() - 6);
-  const end = new Date(now);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = today.getDay(); // Sunday=0, Monday=1, ... Saturday=6
+  const daysFromMonday = day === 0 ? 6 : day - 1;
+  const start = new Date(today);
+  start.setDate(today.getDate() - daysFromMonday);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
   end.setHours(23, 59, 59, 999);
-  return value >= start && value <= end;
+
+  const transactionDateOnly = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  return transactionDateOnly >= start && transactionDateOnly <= end;
 }
+
 export function isTransfer(transaction: Transaction) {
   const category = String(transaction.personalFinanceCategory || transaction.category || "").toUpperCase();
   return category === "TRANSFER_IN" || category === "TRANSFER_OUT" || category.startsWith("TRANSFER_");
 }
+
 function isActualIncome(transaction: Transaction) {
   if (isTransfer(transaction)) return false;
   const category = String(transaction.personalFinanceCategory || transaction.category || "").toUpperCase();
-  // If Plaid already classified the movement as INCOME, trust that classification
-  // even when an older stored transaction still has type="expense".
   if (category === "INCOME") return true;
-  if (transaction.source !== "plaid") return transaction.type === "income";
   return transaction.type === "income";
 }
+
 export function calculateTotals(transactions: Transaction[]) {
   const incomeTransactions = transactions.filter(isActualIncome);
   const expenseTransactions = transactions.filter((t) => t.type === "expense" && !isTransfer(t) && !isActualIncome(t));
