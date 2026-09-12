@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink, PlaidLinkOnSuccess } from "react-plaid-link";
 import { auth } from "../lib/firebase";
 import { useAuth } from "./AuthProvider";
+import BankSyncButton from "./BankSyncButton";
 
 const PLAID_TOKEN_STORAGE_KEY = "lifeboost_plaid_link_token";
 
@@ -144,6 +145,15 @@ export default function BankConnect() {
       </div>
       {status && <p className="mt-4 text-sm text-emerald-400">{status}</p>}
       {error && <p className="mt-4 rounded-xl border border-red-900/60 bg-red-950/30 p-3 text-sm text-red-300">{error}</p>}
+
+      <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+        <p className="text-sm font-semibold text-white">¿Ya tienes tu banco conectado?</p>
+        <p className="mt-1 text-xs text-slate-400">Pulsa una sola vez para actualizar tus movimientos cuando quieras mantener la cuenta al día.</p>
+        <div className="mt-3">
+          <BankSyncButton />
+        </div>
+      </div>
+
       <p className="mt-4 text-xs text-slate-500">También puedes seguir usando la opción de agregar movimientos manualmente en Finanzas.</p>
     </section>
   );
