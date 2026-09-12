@@ -7,12 +7,20 @@ import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
 import { useAuth } from "../../components/AuthProvider";
 import StatsCard from "../../components/dashboard/StatsCard";
-import { calculateTotals, Transaction } from "../../lib/finance";
+import { calculateTotals, isTransfer, Transaction } from "../../lib/finance";
 import { db } from "../../lib/firebase";
+
+const MONTHS = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
 
   useEffect(() => {
     if (!user) return;
@@ -23,10 +31,38 @@ export default function Dashboard() {
   }, [user]);
 
   const totals = useMemo(() => calculateTotals(transactions), [transactions]);
+  const selectedMonthTotals = useMemo(() => {
+    let income = 0;
+    let expenses = 0;
+
+    for (const transaction of transactions) {
+      if (isTransfer(transaction)) continue;
+      const date = new Date(transaction.date);
+      if (Number.isNaN(date.getTime())) continue;
+      if (date.getFullYear() !== selectedYear || date.getMonth() !== selectedMonth) continue;
+
+      const amount = Math.abs(Number(transaction.amount) || 0);
+      if (transaction.type === "income") income += amount;
+      if (transaction.type === "expense") expenses += amount;
+    }
+
+    return { income, expenses };
+  }, [transactions, selectedMonth, selectedYear]);
+
   const displayName = user?.displayName?.split(" ")[0] || "amigo";
-  const monthLabel = new Intl.DateTimeFormat("es-US", { month: "long", year: "numeric" }).format(new Date());
-  const incomeWidth = totals.currentMonthIncome + totals.currentMonthExpenses > 0 ? (totals.currentMonthIncome / (totals.currentMonthIncome + totals.currentMonthExpenses)) * 100 : 0;
+  const selectedMonthLabel = `${MONTHS[selectedMonth]} de ${selectedYear}`;
+  const incomeWidth = selectedMonthTotals.income + selectedMonthTotals.expenses > 0
+    ? (selectedMonthTotals.income / (selectedMonthTotals.income + selectedMonthTotals.expenses)) * 100
+    : 0;
   const expenseWidth = 100 - incomeWidth;
+  const availableYears = useMemo(() => {
+    const years = new Set<number>([now.getFullYear()]);
+    for (const transaction of transactions) {
+      const date = new Date(transaction.date);
+      if (!Number.isNaN(date.getTime())) years.add(date.getFullYear());
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [transactions, now.getFullYear()]);
 
   const stats = [
     { title: "Balance mensual", value: money(totals.balance), icon: "↘" },
@@ -44,7 +80,7 @@ export default function Dashboard() {
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">Smart Finance</p>
               <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Hola, {displayName} 👋</h1>
-              <p className="mt-2 text-sm text-slate-400 sm:text-base">Aquí está tu resumen financiero de {monthLabel}.</p>
+              <p className="mt-2 text-sm text-slate-400 sm:text-base">Aquí está tu resumen financiero de {selectedMonthLabel}.</p>
             </div>
             <Link href="/finances" className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-blue-600 px-5 text-sm font-bold shadow-lg shadow-blue-900/20 transition hover:bg-blue-500">Agregar movimiento</Link>
           </header>
@@ -54,13 +90,42 @@ export default function Dashboard() {
           </section>
 
           <section className="mt-6 rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-5 shadow-xl shadow-black/20 sm:p-6">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div><h2 className="text-lg font-bold">Resumen del mes</h2><p className="text-sm text-slate-400">Ingresos frente a gastos reales registrados.</p></div>
-              <span className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-300">{monthLabel}</span>
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="text-lg font-bold">Resumen del mes</h2>
+                <p className="text-sm text-slate-400">Ingresos frente a gastos reales registrados.</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-slate-400">
+                  <span className="mb-1.5 flex items-center gap-2">▣ Mes</span>
+                  <select
+                    value={selectedMonth}
+                    onChange={(event) => setSelectedMonth(Number(event.target.value))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm font-semibold capitalize text-slate-200 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    aria-label="Seleccionar mes"
+                  >
+                    {MONTHS.map((month, index) => <option key={month} value={index}>{month}</option>)}
+                  </select>
+                </label>
+
+                <label className="block text-xs font-medium text-slate-400">
+                  <span className="mb-1.5 flex items-center gap-2">▣ Año</span>
+                  <select
+                    value={selectedYear}
+                    onChange={(event) => setSelectedYear(Number(event.target.value))}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm font-semibold text-slate-200 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    aria-label="Seleccionar año"
+                  >
+                    {availableYears.map(year => <option key={year} value={year}>{year}</option>)}
+                  </select>
+                </label>
+              </div>
             </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/5 p-4"><p className="text-sm text-slate-400">Ingresos</p><p className="mt-1 text-2xl font-extrabold text-emerald-400">{money(totals.currentMonthIncome)}</p></div>
-              <div className="rounded-2xl border border-rose-500/10 bg-rose-500/5 p-4"><p className="text-sm text-slate-400">Gastos</p><p className="mt-1 text-2xl font-extrabold text-rose-400">{money(totals.currentMonthExpenses)}</p></div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/5 p-4"><p className="text-sm text-slate-400">Ingresos</p><p className="mt-1 text-2xl font-extrabold text-emerald-400">{money(selectedMonthTotals.income)}</p></div>
+              <div className="rounded-2xl border border-rose-500/10 bg-rose-500/5 p-4"><p className="text-sm text-slate-400">Gastos</p><p className="mt-1 text-2xl font-extrabold text-rose-400">{money(selectedMonthTotals.expenses)}</p></div>
             </div>
             <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-800" aria-label="Comparación de ingresos y gastos">
               <div className="flex h-full"><div className="h-full bg-emerald-400" style={{ width: `${incomeWidth}%` }} /><div className="h-full bg-rose-400" style={{ width: `${expenseWidth}%` }} /></div>
