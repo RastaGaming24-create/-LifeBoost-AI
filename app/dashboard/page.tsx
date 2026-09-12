@@ -5,7 +5,6 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import Navbar from "../../components/Navbar";
 import AuthGuard from "../../components/AuthGuard";
-import BankConnection from "../../components/BankConnection";
 import { useAuth } from "../../components/AuthProvider";
 import StatsCard from "../../components/dashboard/StatsCard";
 import { calculateTotals, Transaction } from "../../lib/finance";
@@ -69,7 +68,12 @@ export default function Dashboard() {
             <div className="mt-3 flex justify-between text-xs text-slate-500"><span>Ingresos</span><span>Gastos</span></div>
           </section>
 
-          <section className="mt-6"><BankConnection /></section>
+          <section className="mt-6 rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl shadow-black/10 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><h2 className="text-lg font-bold">Cuenta bancaria</h2><p className="mt-1 text-sm text-slate-400">La conexión y sincronización del banco se administran desde la sección Banco.</p></div>
+              <Link href="/bank" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-700 px-4 text-sm font-semibold hover:bg-slate-800">Gestionar banco →</Link>
+            </div>
+          </section>
 
           <section className="mt-6 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
             <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl shadow-black/10 sm:p-6">
