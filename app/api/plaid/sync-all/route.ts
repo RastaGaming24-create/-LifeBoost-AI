@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { adminDb, verifyBearerToken } from "../../../../lib/firebase-admin";
 import { syncPlaidItem } from "../../../../lib/plaid-sync";
 
@@ -35,7 +34,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
-      accounts: snapshot.docs.filter((doc: QueryDocumentSnapshot) => Boolean(doc.data().accessToken)).length,
+      accounts: snapshot.docs.filter((doc) => Boolean(doc.data().accessToken)).length,
       added,
       modified,
       removed,
