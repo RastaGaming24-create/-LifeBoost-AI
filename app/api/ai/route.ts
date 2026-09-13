@@ -36,7 +36,9 @@ function isActualIncome(data: DocumentData) {
 
 async function financialContext(userId: string) {
   const snapshot = await adminDb().collection("users").doc(userId).collection("transactions").limit(300).get();
-  const rawTransactions: DocumentData[] = snapshot.docs.map((doc) => doc.data());
+  const rawTransactions: DocumentData[] = [];
+  for (const doc of snapshot.docs) rawTransactions.push(doc.data());
+
   const transactions = rawTransactions.map((data: DocumentData) => ({
     description: String(data.description || ""),
     amount: Number(data.amount || 0),
@@ -53,7 +55,11 @@ async function financialContext(userId: string) {
     const category = String(t.category || "Otros");
     byCategory[category] = (byCategory[category] || 0) + Math.abs(Number(t.amount || 0));
   }
-  return { income, expenses, balance: income - expenses, byCategory, transactionCount: realTransactions.length, transactions: transactions.filter((_, i: number) => !isTransfer(rawTransactions[i])).slice(-100) };
+  const nonTransferTransactions = [];
+  for (let i = 0; i < transactions.length; i += 1) {
+    if (!isTransfer(rawTransactions[i])) nonTransferTransactions.push(transactions[i]);
+  }
+  return { income, expenses, balance: income - expenses, byCategory, transactionCount: realTransactions.length, transactions: nonTransferTransactions.slice(-100) };
 }
 
 export async function POST(request: Request) {
