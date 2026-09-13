@@ -1,0 +1,56 @@
+name: Security Auto-Fix
+
+on:
+  schedule:
+    - cron: "47 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  audit-and-propose-fix:
+    name: Audit and propose safe fixes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Apply non-breaking npm security fixes
+        run: npm audit fix --audit-level=high || true
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet -- package.json package-lock.json npm-shrinkwrap.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create security-fix pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="security/auto-fix-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add package.json package-lock.json npm-shrinkwrap.json
+          git commit -m "fix: automatically apply safe dependency security updates"
+          git push --set-upstream origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "fix: automatic dependency security updates" \
+            --body "Automated security maintenance. npm audit fix was run without --force, so SemVer-major upgrades are not applied automatically. CI and Security must pass before this PR is merged."
