@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { adminDb, verifyBearerToken } from "../../../../lib/firebase-admin";
 
 export const runtime = "nodejs";
@@ -15,16 +14,17 @@ export async function GET(request: Request) {
     }
 
     const snapshot = await adminDb().collection("users").limit(500).get();
-    const users = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
+    const users = [];
+    for (const doc of snapshot.docs) {
       const data = doc.data();
-      return {
+      users.push({
         id: doc.id,
         email: typeof data.email === "string" ? data.email : undefined,
         name: typeof data.name === "string" ? data.name : undefined,
         role: typeof data.role === "string" ? data.role : "user",
         createdAt: data.createdAt?.toDate?.()?.toISOString?.() || null,
-      };
-    });
+      });
+    }
 
     return NextResponse.json({ users });
   } catch (error) {
