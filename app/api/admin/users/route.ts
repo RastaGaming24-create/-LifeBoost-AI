@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { adminDb, verifyBearerToken } from "../../../../lib/firebase-admin";
 
 export const runtime = "nodejs";
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     }
 
     const snapshot = await adminDb().collection("users").limit(500).get();
-    const users = snapshot.docs.map((doc) => {
+    const users = snapshot.docs.map((doc: QueryDocumentSnapshot) => {
       const data = doc.data();
       return {
         id: doc.id,
