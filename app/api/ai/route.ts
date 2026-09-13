@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { DocumentData } from "firebase-admin/firestore";
 import { adminDb, verifyBearerToken } from "../../../lib/firebase-admin";
 
 export const runtime = "nodejs";
@@ -20,13 +21,13 @@ function isAllowedOrigin(request: Request) {
   try { return new URL(origin).host === new URL(request.url).host; } catch { return false; }
 }
 
-function isTransfer(data: any) {
+function isTransfer(data: DocumentData) {
   if (data?.source !== "plaid") return false;
   const category = String(data?.personalFinanceCategory || data?.category || "").toUpperCase();
   return category === "TRANSFER_IN" || category === "TRANSFER_OUT" || category.startsWith("TRANSFER_");
 }
 
-function isActualIncome(data: any) {
+function isActualIncome(data: DocumentData) {
   if (isTransfer(data)) return false;
   if (data?.source !== "plaid") return data?.type === "income";
   const category = String(data?.personalFinanceCategory || "").toUpperCase();
@@ -35,8 +36,8 @@ function isActualIncome(data: any) {
 
 async function financialContext(userId: string) {
   const snapshot = await adminDb().collection("users").doc(userId).collection("transactions").limit(300).get();
-  const rawTransactions = snapshot.docs.map((doc) => doc.data());
-  const transactions = rawTransactions.map((data) => ({
+  const rawTransactions: DocumentData[] = snapshot.docs.map((doc) => doc.data());
+  const transactions = rawTransactions.map((data: DocumentData) => ({
     description: String(data.description || ""),
     amount: Number(data.amount || 0),
     type: data.type === "income" ? "income" : "expense",
@@ -44,15 +45,15 @@ async function financialContext(userId: string) {
     date: String(data.date || ""),
     source: data.source === "plaid" ? "bank" : "manual",
   }));
-  const realTransactions = rawTransactions.filter((data) => !isTransfer(data));
-  const income = realTransactions.filter(isActualIncome).reduce((sum, t) => sum + Math.abs(Number(t.amount || 0)), 0);
-  const expenses = realTransactions.filter(t => t?.type === "expense").reduce((sum, t) => sum + Math.abs(Number(t.amount || 0)), 0);
+  const realTransactions = rawTransactions.filter((data: DocumentData) => !isTransfer(data));
+  const income = realTransactions.filter((data: DocumentData) => isActualIncome(data)).reduce((sum: number, t: DocumentData) => sum + Math.abs(Number(t.amount || 0)), 0);
+  const expenses = realTransactions.filter((t: DocumentData) => t?.type === "expense").reduce((sum: number, t: DocumentData) => sum + Math.abs(Number(t.amount || 0)), 0);
   const byCategory: Record<string, number> = {};
-  for (const t of realTransactions.filter(t => t?.type === "expense")) {
+  for (const t of realTransactions.filter((t: DocumentData) => t?.type === "expense")) {
     const category = String(t.category || "Otros");
     byCategory[category] = (byCategory[category] || 0) + Math.abs(Number(t.amount || 0));
   }
-  return { income, expenses, balance: income - expenses, byCategory, transactionCount: realTransactions.length, transactions: transactions.filter((_, i) => !isTransfer(rawTransactions[i])).slice(-100) };
+  return { income, expenses, balance: income - expenses, byCategory, transactionCount: realTransactions.length, transactions: transactions.filter((_, i: number) => !isTransfer(rawTransactions[i])).slice(-100) };
 }
 
 export async function POST(request: Request) {
