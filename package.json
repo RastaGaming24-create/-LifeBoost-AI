@@ -17,7 +17,7 @@
     "firebase": "^11.0.1",
     "firebase-admin": "^14.4.0",
     "jose": "4.15.9",
-    "lucide-react": "^0.540.0",
+    "lucide-react": "^1.45.0",
     "openai": "^5.12.2",
     "plaid": "^46.0.0",
     "react-plaid-link": "^5.0.0",
